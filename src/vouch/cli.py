@@ -775,7 +775,11 @@ def activity(
         agent=agent,
     )
     body = stats_mod.collect_activity(
-        store, days=days, tz_offset_minutes=tz_offset_minutes, tz=tz, viewer=viewer,
+        store,
+        days=days,
+        tz_offset_minutes=tz_offset_minutes,
+        tz=tz,
+        viewer=viewer,
     )
     if as_json:
         _emit_json(body)
@@ -828,7 +832,10 @@ def digest_cmd(since: str, stale_days: int, limit: int, fmt: str) -> None:
     except metrics_mod.MetricsError as e:
         raise click.UsageError(str(e)) from e
     d = digest_mod.build(
-        store, since=since_dt, stale_after_days=stale_days, limit=limit,
+        store,
+        since=since_dt,
+        stale_after_days=stale_days,
+        limit=limit,
     )
     if fmt == "json":
         _emit_json(d.to_dict())
@@ -1238,15 +1245,22 @@ def metrics(
 @cli.command(name="pages")
 @click.option("--kind", default=None, help="Filter by page kind (built-in or config-declared).")
 @click.option(
-    "--meta", "meta", multiple=True, metavar="K=V",
+    "--meta",
+    "meta",
+    multiple=True,
+    metavar="K=V",
     help="Frontmatter equality filter (repeatable).",
 )
 @click.option(
-    "--before", multiple=True, metavar="K=V",
+    "--before",
+    multiple=True,
+    metavar="K=V",
     help="Inclusive upper bound on a frontmatter field (dates/numbers).",
 )
 @click.option(
-    "--after", multiple=True, metavar="K=V",
+    "--after",
+    multiple=True,
+    metavar="K=V",
     help="Inclusive lower bound on a frontmatter field (dates/numbers).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of text.")
@@ -1268,14 +1282,21 @@ def pages_cmd(
     except ValueError as e:
         raise click.UsageError(str(e)) from e
     hits = filter_pages(
-        store.list_pages(), kind=kind, equals=equals, before=hi, after=lo,
+        store.list_pages(),
+        kind=kind,
+        equals=equals,
+        before=hi,
+        after=lo,
     )
     if as_json:
         _emit_json(
             [
                 {
-                    "id": p.id, "title": p.title, "type": p.type,
-                    "tags": p.tags, "metadata": p.metadata,
+                    "id": p.id,
+                    "title": p.title,
+                    "type": p.type,
+                    "tags": p.tags,
+                    "metadata": p.metadata,
                 }
                 for p in hits
             ]
@@ -1545,11 +1566,14 @@ def list_relations() -> None:
 @cli.command()
 @click.argument("proposal_ids", nargs=-1)
 @click.option(
-    "--json", "as_json", is_flag=True,
+    "--json",
+    "as_json",
+    is_flag=True,
     help="Emit machine-readable _meta.vouch_triage blocks.",
 )
 @click.option(
-    "--reverse", is_flag=True,
+    "--reverse",
+    is_flag=True,
     help="Ascending order (worst-first) instead of the default descending (best-first).",
 )
 def triage(proposal_ids: tuple[str, ...], as_json: bool, reverse: bool) -> None:
@@ -1710,7 +1734,10 @@ def reject_extracted(page_id: str | None, reason: str) -> None:
     store = _load_store()
     with _cli_errors():
         rejected = reject_auto_extracted(
-            store, rejected_by=_whoami(), page_id=page_id, reason=reason,
+            store,
+            rejected_by=_whoami(),
+            page_id=page_id,
+            reason=reason,
         )
     if not rejected:
         click.echo("no pending auto-extracted edges to reject")
@@ -2112,7 +2139,9 @@ def new_cmd(
 
     metadata = _parse_meta(fields, flag="--field")
     metadata, missing, requires_citations = _stub_page_frontmatter(
-        registry, resolved_kind, metadata,
+        registry,
+        resolved_kind,
+        metadata,
     )
     if interactive and missing:
         missing = _prompt_missing_fields(missing, metadata)
@@ -2394,7 +2423,11 @@ def source_add(path: str, title: str | None, url: str | None, source_type: str) 
 @click.option("--timeout", default=fetch_mod.DEFAULT_TIMEOUT, show_default=True, type=float)
 @click.option("--tag", "tags", multiple=True)
 def source_fetch(
-    url: str, title: str | None, max_bytes: int, timeout: float, tags: tuple[str, ...],
+    url: str,
+    title: str | None,
+    max_bytes: int,
+    timeout: float,
+    tags: tuple[str, ...],
 ) -> None:
     """Fetch URL and register the exact bytes as a content-addressed Source.
 
@@ -2458,7 +2491,9 @@ def source_list(as_json: bool) -> None:
 
 @cli.command(name="inbox")
 @click.option(
-    "--dir", "directory", required=True,
+    "--dir",
+    "directory",
+    required=True,
     type=click.Path(exists=True, file_okay=False),
     help="Folder to scan (must live under the project root).",
 )
@@ -2477,13 +2512,17 @@ def inbox_cmd(directory: str, watch_mode: bool, poll_interval: float, once: bool
     path = Path(directory)
     with _cli_errors():
         if watch_mode and not once:
+
             def _report(res: inbox_mod.ScanResult) -> None:
                 if res.proposed:
                     click.echo(f"filed {len(res.proposed)} proposal(s): {', '.join(res.proposed)}")
 
             with suppress(KeyboardInterrupt):
                 inbox_mod.watch(
-                    store, path, poll_interval=poll_interval, on_result=_report,
+                    store,
+                    path,
+                    poll_interval=poll_interval,
+                    on_result=_report,
                 )
             return
         res = inbox_mod.scan(store, path)
@@ -2578,14 +2617,26 @@ def redact(claim_id: str) -> None:
 
 
 @cli.command(name="claims-clear")
-@click.option("--auto-only", is_flag=True, default=True, show_default=True,
-              help="Clear only auto-approved claims (default: yes)")
-@click.option("--before", type=str, default=None,
-              help="Clear only claims created before this date (ISO 8601, e.g. 2026-07-01)")
-@click.option("--confirm", is_flag=True, default=False,
-              help="Skip confirmation prompt")
-@click.option("--dry-run", is_flag=True, default=False,
-              help="Preview what would be cleared without making changes")
+@click.option(
+    "--auto-only",
+    is_flag=True,
+    default=True,
+    show_default=True,
+    help="Clear only auto-approved claims (default: yes)",
+)
+@click.option(
+    "--before",
+    type=str,
+    default=None,
+    help="Clear only claims created before this date (ISO 8601, e.g. 2026-07-01)",
+)
+@click.option("--confirm", is_flag=True, default=False, help="Skip confirmation prompt")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Preview what would be cleared without making changes",
+)
 def claims_clear(auto_only: bool, before: str | None, confirm: bool, dry_run: bool) -> None:
     """Clear auto-saved claims. Archived claims are preserved in history."""
     from datetime import datetime
@@ -2697,6 +2748,31 @@ def confirm(claim_id: str) -> None:
     click.echo(f"confirmed {claim_id}")
 
 
+@cli.command(name="mark-lesson-followed")
+@click.argument("claim_id")
+@click.option(
+    "--followed/--not-followed",
+    required=True,
+    help="Whether the lesson was actually applied this turn.",
+)
+@click.option("--context", default=None, help="Optional free-text context for the observation.")
+def mark_lesson_followed(claim_id: str, followed: bool, context: str | None) -> None:
+    """Record a followed/not-followed observation for a lesson (#428).
+
+    Append-only: appends a lesson.followed audit event, edits nothing else.
+    """
+    store = _load_store()
+    with _cli_errors():
+        life.mark_lesson_followed(
+            store,
+            claim_id=claim_id,
+            followed=followed,
+            actor=_whoami(),
+            context=context,
+        )
+    click.echo(f"recorded: {claim_id} followed={followed}")
+
+
 @cli.command()
 @click.argument("claim_id")
 def cite(claim_id: str) -> None:
@@ -2751,9 +2827,7 @@ def session_volunteer_cmd(session_id: str, no_clear: bool, as_json: bool) -> Non
         click.echo("(no volunteered context)")
         return
     for offer in offers:
-        click.echo(
-            f"{offer.claim_id}  relevance={offer.relevance:.2f}  {offer.why}"
-        )
+        click.echo(f"{offer.claim_id}  relevance={offer.relevance:.2f}  {offer.why}")
 
 
 @session.command("end")
@@ -3045,27 +3119,35 @@ def capture_finalize_all_cmd(session_id: str | None, max_age_seconds: float) -> 
         return
 
     result = capture_mod.finalize_all_except(
-        store, sid, max_age_seconds=max_age_seconds,
+        store,
+        sid,
+        max_age_seconds=max_age_seconds,
     )
     _emit_json(result)
 
 
 @capture.command("ingest-codex")
 @click.argument(
-    "rollout", required=False,
+    "rollout",
+    required=False,
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
-    "--latest", is_flag=True,
+    "--latest",
+    is_flag=True,
     help="Resolve the newest codex rollout recorded for this project (by cwd).",
 )
 @click.option(
-    "--hook", "hook_mode", is_flag=True,
+    "--hook",
+    "hook_mode",
+    is_flag=True,
     help="Read a codex Stop-hook payload from stdin; never fails the host "
-         "(exits 0 even on errors, like `capture observe`).",
+    "(exits 0 even on errors, like `capture observe`).",
 )
 @click.option(
-    "--codex-home", type=click.Path(file_okay=False, path_type=Path), default=None,
+    "--codex-home",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
     help="Codex state dir holding sessions/ (default: $CODEX_HOME or ~/.codex).",
 )
 def capture_ingest_codex_cmd(
@@ -3104,9 +3186,7 @@ def capture_ingest_codex_cmd(
     store = _load_store()
     with _cli_errors():
         if latest:
-            found = codex_rollout_mod.find_latest_rollout(
-                Path.cwd(), codex_home=codex_home
-            )
+            found = codex_rollout_mod.find_latest_rollout(Path.cwd(), codex_home=codex_home)
             if found is None:
                 raise click.ClickException(
                     "no codex rollout found for this project under "
@@ -3151,8 +3231,7 @@ def capture_banner_cmd() -> None:
     n = capture_mod.pending_count(store)
     if n:
         click.echo(
-            f"🔔 {n} auto-captured session summary(ies) awaiting review — "
-            f"run `vouch review`."
+            f"🔔 {n} auto-captured session summary(ies) awaiting review — run `vouch review`."
         )
 
 
@@ -3196,13 +3275,14 @@ def recall_cmd() -> None:
 
 @cli.command(name="compile")
 @click.option("--dry-run", is_flag=True, help="Draft and validate; file nothing.")
-@click.option("--max-pages", type=int, default=None,
-              help="Cap drafted pages (default: compile.max_pages, 5).")
-@click.option("--llm-cmd", default=None,
-              help="Override compile.llm_cmd from config.yaml for this run.")
+@click.option(
+    "--max-pages", type=int, default=None, help="Cap drafted pages (default: compile.max_pages, 5)."
+)
+@click.option(
+    "--llm-cmd", default=None, help="Override compile.llm_cmd from config.yaml for this run."
+)
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable report.")
-def compile_cmd(dry_run: bool, max_pages: int | None,
-                llm_cmd: str | None, as_json: bool) -> None:
+def compile_cmd(dry_run: bool, max_pages: int | None, llm_cmd: str | None, as_json: bool) -> None:
     """Compile approved claims into topic-page proposals (llm-wiki ingest).
 
     Runs the deployment-configured LLM (compile.llm_cmd) over the live
@@ -3214,8 +3294,12 @@ def compile_cmd(dry_run: bool, max_pages: int | None,
     actor = os.environ.get("VOUCH_AGENT") or compile_mod.COMPILE_ACTOR
     try:
         report = compile_mod.compile_kb(
-            store, actor=actor, triggered_by=_whoami(), llm_cmd=llm_cmd,
-            max_pages=max_pages, dry_run=dry_run,
+            store,
+            actor=actor,
+            triggered_by=_whoami(),
+            llm_cmd=llm_cmd,
+            max_pages=max_pages,
+            dry_run=dry_run,
         )
     except compile_mod.CompileError as e:
         raise click.ClickException(str(e)) from e
@@ -3392,15 +3476,16 @@ def search(
             click.echo("warning: rerank extras not installed; skipping rerank", err=True)
 
     if as_json:
-        _emit_json({
-            "backend": used,
-            "viewer": {"project": viewer.project, "agent": viewer.agent},
-            "hits": [
-                {"kind": k, "id": i, "snippet": snip, "score": score,
-                 "backend": used}
-                for k, i, snip, score in hits
-            ],
-        })
+        _emit_json(
+            {
+                "backend": used,
+                "viewer": {"project": viewer.project, "agent": viewer.agent},
+                "hits": [
+                    {"kind": k, "id": i, "snippet": snip, "score": score, "backend": used}
+                    for k, i, snip, score in hits
+                ],
+            }
+        )
         return
 
     for k, i, snip, score in hits:
@@ -3413,18 +3498,20 @@ def search(
 @cli.command()
 @click.argument("node_id")
 @click.option("--depth", default=1, show_default=True, type=int)
-@click.option("--rel-type", "rel_types", multiple=True,
-              help="Filter to relation types (repeatable).")
+@click.option(
+    "--rel-type", "rel_types", multiple=True, help="Filter to relation types (repeatable)."
+)
 @click.option("--max-nodes", default=50, show_default=True, type=int)
-def neighbors(node_id: str, depth: int, rel_types: tuple[str, ...],
-              max_nodes: int) -> None:
+def neighbors(node_id: str, depth: int, rel_types: tuple[str, ...], max_nodes: int) -> None:
     """List graph neighbors of a claim, page, entity, or source."""
     from .graph import find_neighbors
 
     store = _load_store()
     with _cli_errors():
         result = find_neighbors(
-            store, node_id, depth=depth,
+            store,
+            node_id,
+            depth=depth,
             rel_types=list(rel_types) or None,
             max_nodes=max_nodes,
         )
@@ -3439,8 +3526,7 @@ def neighbors(node_id: str, depth: int, rel_types: tuple[str, ...],
 @click.option("--min-items", default=0, type=int)
 @click.option("--project", default=None, help="Viewer project for scope filtering.")
 @click.option("--agent", default=None, help="Viewer agent for scope filtering.")
-@click.option("--expand-graph", is_flag=True,
-              help="Include 1-hop graph neighbors of search hits.")
+@click.option("--expand-graph", is_flag=True, help="Include 1-hop graph neighbors of search hits.")
 @click.option("--graph-depth", default=1, show_default=True, type=int)
 @click.option("--graph-limit", default=20, show_default=True, type=int)
 def context(
@@ -3738,13 +3824,17 @@ def eval_embedding(queries: str, metric: str) -> None:
 @eval_group.command("recall")
 @click.argument("queries", type=click.Path(exists=True, dir_okay=False))
 @click.option("--k", default=5, show_default=True, type=int)
-@click.option("--baseline", default=None, type=click.Path(exists=True, dir_okay=False),
-              help="Baseline report JSON; fail on a P@k regression beyond tolerance.")
+@click.option(
+    "--baseline",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="Baseline report JSON; fail on a P@k regression beyond tolerance.",
+)
 @click.option("--max-regression", default=0.05, show_default=True, type=float)
-def eval_recall(queries: str, k: int, baseline: str | None,
-                max_regression: float) -> None:
+def eval_recall(queries: str, k: int, baseline: str | None, max_regression: float) -> None:
     """Score kb.context retrieval against a labeled query set (P@k/R@k/MRR/nDCG)."""
     from .eval.recall import compare_baseline, run_recall
+
     store = _load_store()
     with _cli_errors():
         report = run_recall(store, queries, k=k)
@@ -3804,10 +3894,12 @@ def audit(tail: int, as_json: bool, project: str | None, agent: str | None) -> N
     )
     events = list(audit_mod.read_events(store.kb_dir, store=store, viewer=viewer))[-tail:]
     if as_json:
-        _emit_json({
-            "viewer": {"project": viewer.project, "agent": viewer.agent},
-            "events": [e.model_dump(mode="json") for e in events],
-        })
+        _emit_json(
+            {
+                "viewer": {"project": viewer.project, "agent": viewer.agent},
+                "events": [e.model_dump(mode="json") for e in events],
+            }
+        )
         return
     if viewer.project or viewer.agent:
         click.echo(
@@ -3849,20 +3941,22 @@ def detect_themes_cmd(
         top_k=top_k,
     )
     if as_json and not propose:
-        _emit_json({
-            "clusters": [
-                {
-                    "entities": c.entities,
-                    "claim_ids": c.claim_ids,
-                    "session_ids": c.session_ids,
-                    "score": c.score,
-                    "session_count": c.session_count,
-                    "claim_count": c.claim_count,
-                }
-                for c in result.clusters
-            ],
-            "config": result.config_used,
-        })
+        _emit_json(
+            {
+                "clusters": [
+                    {
+                        "entities": c.entities,
+                        "claim_ids": c.claim_ids,
+                        "session_ids": c.session_ids,
+                        "score": c.score,
+                        "session_count": c.session_count,
+                        "claim_count": c.claim_count,
+                    }
+                    for c in result.clusters
+                ],
+                "config": result.config_used,
+            }
+        )
         return
     if not result.clusters:
         click.echo("no themes detected")
@@ -4095,32 +4189,65 @@ def import_proposals_cmd(bundle_path: str, origin_kb: str | None) -> None:
 
 @cli.command(name="auto-pr")
 @click.argument("repo_url")
-@click.option("--workspace", required=True, type=click.Path(),
-              help="directory holding (or to hold) the clone/fork.")
-@click.option("--count", default=1, show_default=True, type=int,
-              help="how many PRs to attempt.")
-@click.option("--claude-effort", default="high", show_default=True,
-              type=click.Choice(["low", "medium", "high", "max"]))
-@click.option("--codex-effort", default="high", show_default=True,
-              type=click.Choice(["low", "medium", "high", "max"]))
-@click.option("--issue-label", "issue_labels", multiple=True,
-              help="restrict the open-issue source to these labels (repeatable).")
-@click.option("--fork-owner", default=None,
-              help="fork owner login (default: the authenticated gh user).")
-@click.option("--max-revise", default=2, show_default=True, type=int,
-              help="max fixer<->verifier revise rounds per item.")
-@click.option("--autonomy", default="edit", show_default=True,
-              type=click.Choice(["edit", "full"]),
-              help="'edit' auto-accepts file edits only (safer default); "
-                   "'full' lets the fixer run arbitrary commands "
-                   "(bypasses claude's permission prompts).")
-@click.option("--dry-run", is_flag=True,
-              help="run every stage except git push / gh pr create.")
+@click.option(
+    "--workspace",
+    required=True,
+    type=click.Path(),
+    help="directory holding (or to hold) the clone/fork.",
+)
+@click.option("--count", default=1, show_default=True, type=int, help="how many PRs to attempt.")
+@click.option(
+    "--claude-effort",
+    default="high",
+    show_default=True,
+    type=click.Choice(["low", "medium", "high", "max"]),
+)
+@click.option(
+    "--codex-effort",
+    default="high",
+    show_default=True,
+    type=click.Choice(["low", "medium", "high", "max"]),
+)
+@click.option(
+    "--issue-label",
+    "issue_labels",
+    multiple=True,
+    help="restrict the open-issue source to these labels (repeatable).",
+)
+@click.option(
+    "--fork-owner", default=None, help="fork owner login (default: the authenticated gh user)."
+)
+@click.option(
+    "--max-revise",
+    default=2,
+    show_default=True,
+    type=int,
+    help="max fixer<->verifier revise rounds per item.",
+)
+@click.option(
+    "--autonomy",
+    default="edit",
+    show_default=True,
+    type=click.Choice(["edit", "full"]),
+    help="'edit' auto-accepts file edits only (safer default); "
+    "'full' lets the fixer run arbitrary commands "
+    "(bypasses claude's permission prompts).",
+)
+@click.option("--dry-run", is_flag=True, help="run every stage except git push / gh pr create.")
 @click.option("--json", "as_json", is_flag=True)
-def auto_pr_cmd(repo_url: str, workspace: str, count: int, claude_effort: str,
-                codex_effort: str, issue_labels: tuple[str, ...],
-                fork_owner: str | None, max_revise: int, autonomy: str,
-                dry_run: bool, as_json: bool) -> None:
+def auto_pr_cmd(
+    repo_url: str,
+    workspace: str,
+    count: int,
+    claude_effort: str,
+    codex_effort: str,
+    issue_labels: tuple[str, ...],
+    fork_owner: str | None,
+    max_revise: int,
+    autonomy: str,
+    dry_run: bool,
+    as_json: bool,
+) -> None:
     """Open N mergeable PRs against REPO_URL, cross-verified by claude + codex.
 
     Sources open issues first (then agent-discovered improvements), bootstraps
@@ -4129,11 +4256,19 @@ def auto_pr_cmd(repo_url: str, workspace: str, count: int, claude_effort: str,
     reviewing engine signs off. A sibling tool — it never writes to the KB.
     """
     from . import auto_pr as ap_mod
+
     try:
         results = ap_mod.run_auto_pr(
-            repo_url, workspace, count, claude_effort, codex_effort,
-            labels=tuple(issue_labels), fork_owner=fork_owner,
-            max_revise=max_revise, autonomy=autonomy, dry_run=dry_run,
+            repo_url,
+            workspace,
+            count,
+            claude_effort,
+            codex_effort,
+            labels=tuple(issue_labels),
+            fork_owner=fork_owner,
+            max_revise=max_revise,
+            autonomy=autonomy,
+            dry_run=dry_run,
         )
     except (ValueError, RuntimeError) as e:
         # surface auto-pr failures as `Error: ...` like the rest of the cli,
@@ -4141,12 +4276,20 @@ def auto_pr_cmd(repo_url: str, workspace: str, count: int, claude_effort: str,
         # KB domain types that _cli_errors handles.)
         raise click.ClickException(str(e)) from e
     if as_json:
-        _emit_json([
-            {"status": r.status, "url": r.url, "fixer": r.fixer,
-             "verifier": r.verifier, "title": r.item.title,
-             "reason": r.reason, "rounds": r.rounds}
-            for r in results
-        ])
+        _emit_json(
+            [
+                {
+                    "status": r.status,
+                    "url": r.url,
+                    "fixer": r.fixer,
+                    "verifier": r.verifier,
+                    "title": r.item.title,
+                    "reason": r.reason,
+                    "rounds": r.rounds,
+                }
+                for r in results
+            ]
+        )
         return
     if not results:
         click.echo(f"no work items found for {repo_url}", err=True)
@@ -4166,30 +4309,61 @@ def auto_pr_cmd(repo_url: str, workspace: str, count: int, claude_effort: str,
 
 @cli.command(name="dual-solve")
 @click.argument("issue_url")
-@click.option("--claude-effort", default="high", show_default=True,
-              type=click.Choice(["low", "medium", "high", "max"]))
-@click.option("--codex-effort", default="high", show_default=True,
-              type=click.Choice(["low", "medium", "high", "max"]))
-@click.option("--autonomy", default="edit", show_default=True,
-              type=click.Choice(["edit", "full"]),
-              help="'edit' auto-accepts file edits only (safer default); "
-                   "'full' lets engines run arbitrary commands.")
-@click.option("--reason", default=None,
-              help="why you picked the winner (skips the interactive prompt).")
-@click.option("--no-record", is_flag=True,
-              help="keep the chosen branch but propose nothing to the kb.")
-@click.option("--dry-run", is_flag=True,
-              help="run both engines but make no commits / kb writes.")
-@click.option("--sandbox", is_flag=True,
-              help="Run claude/codex inside a Docker sandbox image instead of on the host.")
-@click.option("--sandbox-image", default=None,
-              help="Docker image for --sandbox (default: vouch/coder:latest).")
-@click.option("--json", "as_json", is_flag=True,
-              help="non-interactive: emit both diffs + metadata, no prompt.")
-def dual_solve_cmd(issue_url: str, claude_effort: str, codex_effort: str,
-                   autonomy: str, reason: str | None, no_record: bool,
-                   dry_run: bool, sandbox: bool, sandbox_image: str | None,
-                   as_json: bool) -> None:
+@click.option(
+    "--claude-effort",
+    default="high",
+    show_default=True,
+    type=click.Choice(["low", "medium", "high", "max"]),
+)
+@click.option(
+    "--codex-effort",
+    default="high",
+    show_default=True,
+    type=click.Choice(["low", "medium", "high", "max"]),
+)
+@click.option(
+    "--autonomy",
+    default="edit",
+    show_default=True,
+    type=click.Choice(["edit", "full"]),
+    help="'edit' auto-accepts file edits only (safer default); "
+    "'full' lets engines run arbitrary commands.",
+)
+@click.option(
+    "--reason", default=None, help="why you picked the winner (skips the interactive prompt)."
+)
+@click.option(
+    "--no-record", is_flag=True, help="keep the chosen branch but propose nothing to the kb."
+)
+@click.option("--dry-run", is_flag=True, help="run both engines but make no commits / kb writes.")
+@click.option(
+    "--sandbox",
+    is_flag=True,
+    help="Run claude/codex inside a Docker sandbox image instead of on the host.",
+)
+@click.option(
+    "--sandbox-image",
+    default=None,
+    help="Docker image for --sandbox (default: vouch/coder:latest).",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="non-interactive: emit both diffs + metadata, no prompt.",
+)
+def dual_solve_cmd(
+    issue_url: str,
+    claude_effort: str,
+    codex_effort: str,
+    autonomy: str,
+    reason: str | None,
+    no_record: bool,
+    dry_run: bool,
+    sandbox: bool,
+    sandbox_image: str | None,
+    as_json: bool,
+) -> None:
     """Run claude + codex on ISSUE_URL; you pick the winning diff.
 
     Each engine works in its own git worktree on a fresh branch. You compare
@@ -4200,40 +4374,54 @@ def dual_solve_cmd(issue_url: str, claude_effort: str, codex_effort: str,
     from . import dual_solve as ds_mod
     from .auto_pr import SubprocessRunner
     from .sandbox import DEFAULT_SANDBOX_IMAGE, DockerAgentRunner
+
     store = _load_store()
     base_runner = SubprocessRunner()
     sandbox_image = sandbox_image or DEFAULT_SANDBOX_IMAGE
     try:
         if sandbox:
-            ds_mod._require_engines(
-                sandboxed=True, sandbox_image=sandbox_image, runner=base_runner)
+            ds_mod._require_engines(sandboxed=True, sandbox_image=sandbox_image, runner=base_runner)
         else:
             ds_mod._require_engines()
         root = ds_mod.repo_root(base_runner, Path.cwd())
         runner = (
             DockerAgentRunner(repo_root=root, runner=base_runner, image=sandbox_image)
-            if sandbox else base_runner
+            if sandbox
+            else base_runner
         )
         issue, candidates, engines = ds_mod.prepare(
-            store, issue_url, root, runner,
-            claude_effort=claude_effort, codex_effort=codex_effort,
-            autonomy=autonomy, dry_run=dry_run,
+            store,
+            issue_url,
+            root,
+            runner,
+            claude_effort=claude_effort,
+            codex_effort=codex_effort,
+            autonomy=autonomy,
+            dry_run=dry_run,
             on_progress=lambda m: click.echo(m, err=True),
         )
     except (ValueError, RuntimeError) as e:
         raise click.ClickException(str(e)) from e
 
     if as_json:
-        _emit_json({
-            "issue": {"number": issue.number, "title": issue.title,
-                      "url": issue.url},
-            "recommendation": ds_mod.recommendation(candidates),
-            "candidates": [
-                {"engine": c.engine, "branch": c.branch, "ok": c.ok,
-                 "error": c.error, "changed_files": ds_mod.changed_files(c.diff),
-                 "log": c.log, "diff": c.diff} for c in candidates
-            ],
-        })
+        _emit_json(
+            {
+                "issue": {"number": issue.number, "title": issue.title, "url": issue.url},
+                "recommendation": ds_mod.recommendation(candidates),
+                "candidates": [
+                    {
+                        "engine": c.engine,
+                        "branch": c.branch,
+                        "ok": c.ok,
+                        "error": c.error,
+                        "changed_files": ds_mod.changed_files(c.diff),
+                        "log": c.log,
+                        "diff": c.diff,
+                    }
+                    for c in candidates
+                ],
+            }
+        )
         return
 
     for c in candidates:
@@ -4250,8 +4438,11 @@ def dual_solve_cmd(issue_url: str, claude_effort: str, codex_effort: str,
 
     rec = ds_mod.recommendation(candidates)
     if rec.get("reason"):
-        label = f"recommendation: {rec['engine']}" if rec.get("engine") \
+        label = (
+            f"recommendation: {rec['engine']}"
+            if rec.get("engine")
             else "recommendation: no automatic pick"
+        )
         click.echo(f"{label} -- {rec['reason']}", err=True)
 
     ok = [c for c in candidates if c.ok]
@@ -4261,15 +4452,28 @@ def dual_solve_cmd(issue_url: str, claude_effort: str, codex_effort: str,
     if len(ok) == 1:
         survivor = ok[0]
         if not click.confirm(
-                f"only {survivor.engine} produced a usable diff; proceed with it?",
-                default=True):
-            ds_mod.finalize(store, root, issue, None, engines, candidates, "",
-                            runner, record=False, proposed_by=_whoami())
+            f"only {survivor.engine} produced a usable diff; proceed with it?", default=True
+        ):
+            ds_mod.finalize(
+                store,
+                root,
+                issue,
+                None,
+                engines,
+                candidates,
+                "",
+                runner,
+                record=False,
+                proposed_by=_whoami(),
+            )
             raise click.ClickException("aborted; both branches discarded")
         choice = survivor.engine
     else:
-        letter = click.prompt("pick a winner [c]laude / [x]codex / [n]either",
-                              type=click.Choice(["c", "x", "n"]), default="c")
+        letter = click.prompt(
+            "pick a winner [c]laude / [x]codex / [n]either",
+            type=click.Choice(["c", "x", "n"]),
+            default="c",
+        )
         choice = {"c": "claude", "x": "codex", "n": None}[letter]
 
     chosen = next((c for c in candidates if c.engine == choice), None)
@@ -4278,8 +4482,16 @@ def dual_solve_cmd(issue_url: str, claude_effort: str, codex_effort: str,
 
     try:
         ids = ds_mod.finalize(
-            store, root, issue, chosen, engines, candidates, reason or "", runner,
-            record=not no_record and not dry_run, proposed_by=_whoami(),
+            store,
+            root,
+            issue,
+            chosen,
+            engines,
+            candidates,
+            reason or "",
+            runner,
+            record=not no_record and not dry_run,
+            proposed_by=_whoami(),
         )
     except (ValueError, RuntimeError) as e:
         raise click.ClickException(f"failed to record/clean up: {e}") from e
@@ -5280,7 +5492,7 @@ def console(bind: str, allow_remote: bool, open_browser: bool) -> None:
     "--allow-dual-solve",
     is_flag=True,
     help="Mount the dual-solve runner SPA (spawns claude+codex; edit-only). "
-         "Off by default; the server must run inside the target git repo.",
+    "Off by default; the server must run inside the target git repo.",
 )
 @click.option(
     "--dual-solve-sandbox",
@@ -5341,7 +5553,10 @@ def review_ui(
 
     try:
         app = web_pkg.create_app(
-            kb_root, auth_token=token, auth_label=reviewer, page_size=page_size,
+            kb_root,
+            auth_token=token,
+            auth_label=reviewer,
+            page_size=page_size,
             allow_dual_solve=allow_dual_solve,
             dual_solve_sandbox=dual_solve_sandbox,
             dual_solve_sandbox_image=dual_solve_sandbox_image,

@@ -24,6 +24,13 @@ def store(tmp_path: Path) -> KBStore:
     return s
 
 
+def test_load_config_quoted_false_does_not_enable(store: KBStore) -> None:
+    """Regression: bool("false") is True in plain Python, so a mistakenly
+    quoted `enabled: "false"` previously silently kept volunteer_context on."""
+    store.config_path.write_text('volunteer:\n  enabled: "false"\n')
+    assert volunteer_context.load_config(store).enabled is False
+
+
 def test_jwt_claim_volunteered_on_session_start(store: KBStore, monkeypatch) -> None:
     src = store.put_source(b"jwt spec")
     store.put_claim(Claim(

@@ -50,6 +50,21 @@ def store(tmp_path, monkeypatch) -> KBStore:
     return s
 
 
+def test_load_config_quoted_false_does_not_enable(store: KBStore) -> None:
+    """Regression: bool("false") is True in plain Python, so a mistakenly
+    quoted `enabled: "false"` previously silently kept admission gating on,
+    and `reject_uncited_session_pages: "false"` kept that rule on too."""
+    store.config_path.write_text(
+        store.config_path.read_text(encoding="utf-8")
+        + '\nadmission:\n  enabled: "false"\n'
+        '  reject_uncited_session_pages: "false"\n',
+        encoding="utf-8",
+    )
+    cfg = admission.load_config(store)
+    assert cfg.enabled is False
+    assert cfg.reject_uncited_session_pages is False
+
+
 # ---------------------------------------------------------------- pure predicate
 @pytest.mark.parametrize("text", FRAGMENT_CLAIMS)
 def test_assess_claim_rejects_structural_fragments(text: str) -> None:

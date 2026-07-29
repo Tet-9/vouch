@@ -54,8 +54,14 @@ def test_docker_agent_runner_wraps_agent_with_worktree_and_home_mounts(
         argv = fr.calls[0]
         assert argv[:3] == ["docker", "run", "--rm"]
         assert "--entrypoint" in argv and "" in argv
-        assert "--user" in argv
-        assert f"{os.getuid()}:{os.getgid()}" in argv
+        # match sandbox._docker_argv: both must be callable, not merely present.
+        uid_ok = callable(getattr(os, "getuid", None))
+        gid_ok = callable(getattr(os, "getgid", None))
+        if uid_ok and gid_ok:
+            assert "--user" in argv
+            assert f"{os.getuid()}:{os.getgid()}" in argv
+        else:
+            assert "--user" not in argv
         assert "-w" in argv and str(worktree.resolve()) in argv
         assert "-e" in argv
         assert f"HOME={sandbox.CONTAINER_HOME}" in argv
@@ -68,6 +74,51 @@ def test_docker_agent_runner_wraps_agent_with_worktree_and_home_mounts(
         )
         assert "agent-img" in argv
         assert argv[-3:] == ["codex", "exec", "fix"]
+    finally:
+        runner.close()
+
+
+@pytest.mark.parametrize(
+    "break_uid,break_gid",
+    [
+        pytest.param(True, False, id="getuid-missing"),
+        pytest.param(False, True, id="getgid-missing"),
+        pytest.param(True, True, id="both-missing"),
+        pytest.param("noncallable", False, id="getuid-noncallable"),
+        pytest.param(False, "noncallable", id="getgid-noncallable"),
+    ],
+)
+def test_docker_argv_omits_user_when_uid_gid_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    break_uid: bool | str,
+    break_gid: bool | str,
+) -> None:
+    """Regression for #582: omit --user unless both getuid and getgid are callable."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def _break(attr: str, how: bool | str) -> None:
+        if how is False:
+            return
+        if how == "noncallable":
+            monkeypatch.setattr(sandbox.os, attr, object(), raising=False)
+        else:
+            monkeypatch.delattr(sandbox.os, attr, raising=False)
+
+    _break("getuid", break_uid)
+    _break("getgid", break_gid)
+
+    fr = FakeRunner()
+    runner = sandbox.DockerAgentRunner(
+        repo_root=repo, runner=fr, image="agent-img", host_home=tmp_path,
+    )
+    try:
+        runner.run(["claude", "-p", "hi"], cwd=str(repo))
+        argv = fr.calls[0]
+        assert argv[:3] == ["docker", "run", "--rm"]
+        assert "--user" not in argv
+        assert "agent-img" in argv
     finally:
         runner.close()
 

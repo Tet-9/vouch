@@ -43,6 +43,8 @@ METHODS = [
     "kb.read_claim",
     "kb.read_entity",
     "kb.read_relation",
+    "kb.read_evidence",
+    "kb.read_source",
     "kb.diff",
     "kb.list_pages",
     "kb.list_claims",

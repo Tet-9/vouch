@@ -397,6 +397,34 @@ def kb_read_relation(relation_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def kb_read_evidence(evidence_id: str) -> dict[str, Any]:
+    """Return an evidence record — the span/quote a claim cites."""
+    store = _store()
+    try:
+        ev = store.get_evidence(evidence_id)
+    except ArtifactNotFoundError as e:
+        raise ValueError(str(e)) from e
+    result = ev.model_dump(mode="json")
+    return hot_mod.attach_hot_memory(  # type: ignore[no-any-return]
+        result, store, query=ev.quote,
+    )
+
+
+@mcp.tool()
+def kb_read_source(source_id: str) -> dict[str, Any]:
+    """Return a registered source's metadata (not its content)."""
+    store = _store()
+    try:
+        src = store.get_source(source_id)
+    except ArtifactNotFoundError as e:
+        raise ValueError(str(e)) from e
+    result = src.model_dump(mode="json")
+    return hot_mod.attach_hot_memory(  # type: ignore[no-any-return]
+        result, store, query=src.title,
+    )
+
+
+@mcp.tool()
 def kb_diff(old_id: str, new_id: str | None = None) -> dict[str, Any]:
     """Field-level diff between two claim revisions or two page revisions.
 

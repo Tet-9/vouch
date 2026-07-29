@@ -31,6 +31,7 @@ from typing import Any
 
 import yaml
 
+from .config_coerce import coerce_bool
 from .enrich import Enrichment
 from .models import ProposalStatus
 from .secrets import mask_secrets
@@ -70,7 +71,7 @@ def load_config(store: KBStore) -> CaptureConfig:
     if answer_mode not in _ANSWER_MODES:
         answer_mode = DEFAULT_ANSWER_MODE
     return CaptureConfig(
-        enabled=bool(raw.get("enabled", DEFAULT_ENABLED)),
+        enabled=coerce_bool(raw.get("enabled", DEFAULT_ENABLED), DEFAULT_ENABLED),
         min_observations=int(raw.get("min_observations", DEFAULT_MIN_OBSERVATIONS)),
         dedup_window_seconds=float(
             raw.get("dedup_window_seconds", DEFAULT_DEDUP_WINDOW_SECONDS)
@@ -892,19 +893,20 @@ def is_stale_buffer(
     return age > max_age_seconds
 
 
-def _drain_receipt_backlog(store: KBStore) -> int:
-    """Auto-approve pending receipt-verified claims; count them.
+def _drain_approval_backlog(store: KBStore) -> int:
+    """Auto-approve whatever the configured gate allows; count it.
 
-    With ``review.auto_approve_on_receipt`` on (the starter-config default)
-    this clears any backlog of verifiable claims left pending while the gate
-    was off — e.g. a kb that flipped the flag after capturing. No-op when the
-    gate is off, and never fatal: it runs from a SessionStart hook that must
-    not break the session.
+    Under ``review.approver_role: trusted-agent`` (the starter-config
+    default) this drains every pending proposal — claims, pages, relations —
+    left behind while the gate was stricter; under
+    ``review.auto_approve_on_receipt`` alone it drains receipt-verified
+    claims only. No-op when no gate is open, and never fatal: it runs from a
+    SessionStart hook that must not break the session.
     """
     from . import proposals as proposals_mod
 
     try:
-        return len(proposals_mod.auto_approve_receipts(store))
+        return len(proposals_mod.auto_approve_pending(store))
     except Exception:
         return 0
 
@@ -936,7 +938,7 @@ def finalize_all_except(
             "finalized": finalized,
             "skipped_recent": skipped_recent,
             "skipped_current": skipped_current,
-            "auto_approved": _drain_receipt_backlog(store),
+            "auto_approved": _drain_approval_backlog(store),
         }
 
     for path in sorted(caps_dir.glob("*.jsonl")):
@@ -964,5 +966,5 @@ def finalize_all_except(
         "finalized": finalized,
         "skipped_recent": skipped_recent,
         "skipped_current": skipped_current,
-        "auto_approved": _drain_receipt_backlog(store),
+        "auto_approved": _drain_approval_backlog(store),
     }

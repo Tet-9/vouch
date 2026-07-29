@@ -195,3 +195,36 @@ export interface WhyResult {
 
 /** kb.cite returns heterogeneous evidence/source dicts — render defensively. */
 export type Citation = Record<string, unknown>
+
+/** kb.read_evidence — the span/quote a claim cites. */
+export interface EvidenceRecord {
+  id: string
+  source_id: string
+  locator: string
+  quote: string | null
+  byte_start: number | null
+  byte_end: number | null
+  created_at: string
+}
+
+/** kb.read_source — a registered source's metadata (never its content). */
+export interface SourceRecord {
+  id: string
+  type: string
+  locator: string
+  title: string | null
+  byte_size: number
+  media_type: string
+  created_at: string
+}
+
+/** One kb.audit event — the append-only review-gate history. */
+export interface AuditEvent {
+  id: string
+  event: string
+  actor: string
+  created_at: string
+  object_ids?: string[]
+  data?: Record<string, unknown>
+  [k: string]: unknown
+}

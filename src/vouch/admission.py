@@ -42,6 +42,8 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from .config_coerce import coerce_bool
+
 if TYPE_CHECKING:
     from .storage import KBStore
 
@@ -103,10 +105,11 @@ def load_config(store: KBStore) -> AdmissionConfig:
     if not isinstance(raw, dict):
         return AdmissionConfig()
     return AdmissionConfig(
-        enabled=bool(raw.get("enabled", DEFAULT_ENABLED)),
+        enabled=coerce_bool(raw.get("enabled", DEFAULT_ENABLED), DEFAULT_ENABLED),
         min_confidence=_as_float(raw.get("min_confidence")) or DEFAULT_MIN_CONFIDENCE,
-        reject_uncited_session_pages=bool(
-            raw.get("reject_uncited_session_pages", DEFAULT_REJECT_UNCITED_SESSION_PAGES)
+        reject_uncited_session_pages=coerce_bool(
+            raw.get("reject_uncited_session_pages", DEFAULT_REJECT_UNCITED_SESSION_PAGES),
+            DEFAULT_REJECT_UNCITED_SESSION_PAGES,
         ),
     )
 

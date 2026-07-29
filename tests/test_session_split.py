@@ -49,6 +49,15 @@ def test_split_config_typo_coerces_to_default(store: KBStore) -> None:
     assert load_split_config(store).max_pages == 6
 
 
+def test_split_config_quoted_false_enabled_does_not_enable(store: KBStore) -> None:
+    """Regression: bool("false") is True in plain Python, so a mistakenly
+    quoted `enabled: "false"` previously silently kept splitting enabled."""
+    store.config_path.write_text(
+        'capture:\n  split:\n    enabled: "false"\n', encoding="utf-8"
+    )
+    assert load_split_config(store).enabled is False
+
+
 def _observe(store: KBStore, sid: str, n: int, tool: str = "Edit") -> None:
     from vouch import capture
     for i in range(n):

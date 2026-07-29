@@ -31,6 +31,13 @@ def test_load_config_reads_override(store: KBStore) -> None:
     assert cfg.min_observations == 5
 
 
+def test_load_config_quoted_false_does_not_enable(store: KBStore) -> None:
+    """Regression: bool("false") is True in plain Python, so a mistakenly
+    quoted `enabled: "false"` previously silently kept capture enabled."""
+    store.config_path.write_text('capture:\n  enabled: "false"\n')
+    assert cap.load_config(store).enabled is False
+
+
 def test_buffer_path_under_captures_dir(store: KBStore) -> None:
     p = cap.buffer_path(store, "sess-123")
     assert p == store.kb_dir / "captures" / "sess-123.jsonl"

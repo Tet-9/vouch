@@ -29,6 +29,7 @@ import yaml
 
 from . import audit as audit_mod
 from . import llm_draft
+from .config_coerce import coerce_bool
 from .context import _RETRACTED_CLAIM_STATUSES
 from .models import ProposalStatus
 from .proposals import ProposalError, _slugify, propose_page
@@ -169,7 +170,7 @@ def load_config(store: KBStore) -> CompileConfig:
             raw.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
             DEFAULT_TIMEOUT_SECONDS, float,
         ),
-        two_phase=bool(raw.get("two_phase", False)),
+        two_phase=coerce_bool(raw.get("two_phase", False), False),
     )
 
 

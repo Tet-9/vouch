@@ -109,7 +109,15 @@ class DockerAgentRunner:
         args = [
             "docker", "run", "--rm", "-i",
             "--entrypoint", "",
-            "--user", f"{os.getuid()}:{os.getgid()}",
+        ]
+        # os.getuid/getgid are POSIX-only. On Windows (Docker Desktop) omit
+        # --user so argv construction does not AttributeError before docker
+        # runs (#582).
+        getuid = getattr(os, "getuid", None)
+        getgid = getattr(os, "getgid", None)
+        if callable(getuid) and callable(getgid):
+            args += ["--user", f"{getuid()}:{getgid()}"]
+        args += [
             "-w", str(workdir),
             "-e", f"HOME={self.container_home}",
             "-v", f"{self.sandbox_home}:{self.container_home}",

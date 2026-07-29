@@ -172,6 +172,111 @@ def test_context_pack_excludes_archived_claims(store: KBStore) -> None:
     assert not any(it["id"] == "c1" for it in pack["items"]), pack
 
 
+def test_search_kb_excludes_retracted_claims(store: KBStore) -> None:
+    """Regression for #581: search_kb must apply the same retracted-status
+    filter as build_context_pack — otherwise kb.search leaks archived /
+    superseded / redacted claims after lifecycle controls run."""
+    from vouch import lifecycle
+    from vouch.models import Page, PageStatus, PageType
+
+    src = store.put_source(b"e")
+    store.put_claim(Claim(
+        id="c1", text="mongodb is faster than postgres", evidence=[src.id],
+    ))
+    store.put_page(Page(
+        id="p-live", title="mongodb ops", body="live page about mongodb",
+        type=PageType.CONCEPT, sources=[src.id],
+    ))
+    store.put_page(Page(
+        id="p-arch", title="mongodb old", body="archived mongodb notes",
+        type=PageType.CONCEPT, status=PageStatus.ARCHIVED, sources=[src.id],
+    ))
+    health.rebuild_index(store)
+
+    before = context.search_kb(store, query="mongodb", backend="substring")
+    ids_before = {h["id"] for h in before["hits"]}
+    assert "c1" in ids_before, before
+    assert "p-live" in ids_before, before
+    assert "p-arch" not in ids_before, before
+
+    lifecycle.archive(store, claim_id="c1", actor="reviewer")
+    after = context.search_kb(store, query="mongodb", backend="substring")
+    ids_after = {h["id"] for h in after["hits"]}
+    assert "c1" not in ids_after, after
+    assert "p-live" in ids_after, after
+    assert "p-arch" not in ids_after, after
+
+
+@pytest.mark.parametrize("mode", ["archived", "superseded", "redacted"])
+def test_search_kb_excludes_each_retracted_status(
+    store: KBStore, mode: str,
+) -> None:
+    """#581: each retracted claim status must disappear from kb.search."""
+    from vouch import lifecycle
+
+    src = store.put_source(b"e")
+    store.put_claim(Claim(
+        id="c1", text="mongodb is faster than postgres", evidence=[src.id],
+    ))
+    health.rebuild_index(store)
+    assert any(
+        h["id"] == "c1"
+        for h in context.search_kb(
+            store, query="mongodb", backend="substring",
+        )["hits"]
+    )
+
+    if mode == "archived":
+        lifecycle.archive(store, claim_id="c1", actor="reviewer")
+    elif mode == "superseded":
+        store.put_claim(Claim(
+            id="c2", text="mongodb is faster than postgres v2",
+            evidence=[src.id],
+        ))
+        lifecycle.supersede(
+            store, old_claim_id="c1", new_claim_id="c2", actor="reviewer",
+        )
+    else:
+        lifecycle.redact(store, claim_id="c1", actor="reviewer")
+
+    health.rebuild_index(store)
+    ids = {
+        h["id"]
+        for h in context.search_kb(
+            store, query="mongodb", backend="substring",
+        )["hits"]
+    }
+    assert "c1" not in ids, ids
+
+
+def test_search_kb_refills_limit_after_lifecycle_filter(store: KBStore) -> None:
+    """#581: over-fetch so archived top-hits do not starve live results."""
+    from vouch import lifecycle
+
+    src = store.put_source(b"e")
+    # high substring score (many query matches) but retracted — would fill a
+    # tight backend window and hide the live claim without candidate over-fetch.
+    for i in range(5):
+        cid = f"arch-{i}"
+        store.put_claim(Claim(
+            id=cid,
+            text="mongodb mongodb mongodb mongodb mongodb",
+            evidence=[src.id],
+        ))
+        lifecycle.archive(store, claim_id=cid, actor="reviewer")
+    store.put_claim(Claim(
+        id="live-mongo", text="mongodb tip", evidence=[src.id],
+    ))
+    health.rebuild_index(store)
+
+    result = context.search_kb(
+        store, query="mongodb", backend="substring", limit=1,
+    )
+    ids = [h["id"] for h in result["hits"]]
+    assert ids == ["live-mongo"], result
+    assert len(result["hits"]) == 1
+
+
 def test_context_pack_excludes_superseded_claims(store: KBStore) -> None:
     """Regression for #78: supersede(old, new) must keep `new` retrievable
     while removing `old` from kb.context."""

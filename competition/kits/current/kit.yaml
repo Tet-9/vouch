@@ -1,0 +1,27 @@
+# the reigning retrieval kit - vouch's answer to ditto's starter-kit crate.
+# ascii only in this file: it crosses tools and locales.
+#
+# this file is the ONLY thing a ladder PR may change, and it is the WHOLE
+# retrieval config of the bench kb: vouchbench writes `review:` plus this
+# file verbatim as the throwaway kb's config.yaml. omitting a key does not
+# inherit anything - it means the engine's code default for that knob.
+# the reigning kit spells out every knob it relies on, and the current
+# values reproduce the repo baseline exactly.
+#
+# dethrone these values by max(0.007, 1.96 * paired SE) over the day's
+# seeds and your PR auto-merges. allowed keys and bounds are enforced by
+# .github/scripts/validate_kit.py - anything else fails before scoring.
+retrieval:
+  backend: auto
+  default_limit: 10
+  recency:
+    enabled: true
+    half_life_days: 90.0
+  prompt_gate:
+    enabled: true
+  rerank:
+    enabled: false
+    top_k: 50
+  pages_first:
+    enabled: false
+    boost: 1.25

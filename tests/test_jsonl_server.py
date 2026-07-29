@@ -203,6 +203,10 @@ def test_jsonl_session_lifecycle(store: KBStore, monkeypatch) -> None:
 
 def test_jsonl_self_approval_forbidden(store: KBStore, monkeypatch) -> None:
     """approve() must raise forbidden_self_approval when proposer == approver."""
+    # pin the gate closed: the starter config trusts the agent by default.
+    store.config_path.write_text(
+        "review:\n  auto_approve_on_receipt: false\n", encoding="utf-8"
+    )
     src = store.put_source(b"evidence")
     monkeypatch.chdir(store.root)
     pr = handle_request({"id": "1", "method": "kb.propose_claim",
@@ -298,6 +302,10 @@ def test_one_token_cannot_self_approve_by_swapping_header(
     from vouch import jsonl_server
     from vouch import trust as trust_mod
 
+    # pin the gate closed: the starter config trusts the agent by default.
+    store.config_path.write_text(
+        "review:\n  auto_approve_on_receipt: false\n", encoding="utf-8"
+    )
     src = store.put_source(b"evidence")
     monkeypatch.chdir(store.root)
     trust = trust_mod.with_auth_subject(trust_mod.JSONL_HTTP, "one-token")

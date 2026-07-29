@@ -38,6 +38,9 @@ def _set_rerank(store: KBStore, *, enabled: bool, top_k: int | None = None) -> N
     if top_k is not None:
         rerank_cfg["top_k"] = top_k
     cfg.setdefault("retrieval", {})["rerank"] = rerank_cfg
+    # these tests assert the rerank stage in isolation; the shipped champion
+    # strategy is final-say and would re-sort the window, so opt out here.
+    cfg["retrieval"]["strategy"] = None
     store.config_path.write_text(yaml.safe_dump(cfg))
 
 

@@ -20,8 +20,15 @@ from typing import Any, Literal, cast
 import yaml
 
 from . import graph, hot_memory, index_db, retrieval_events
+from . import strategy as strategy_mod
 from .embeddings.fusion import rrf_fuse
-from .models import ClaimStatus, ContextItem, ContextPack, ContextQuality
+from .models import (
+    ClaimStatus,
+    ContextItem,
+    ContextPack,
+    ContextQuality,
+    PageStatus,
+)
 from .scoping import (
     ViewerContext,
     filter_hits,
@@ -43,6 +50,18 @@ _RETRACTED_CLAIM_STATUSES = frozenset({
 })
 
 ContextItemKind = Literal["claim", "page", "entity", "relation", "source"]
+
+# Candidate-pool sizing when a ranking strategy is active: the strategy
+# ranks pool candidates and the top ``limit`` survive, so exclusion (not
+# just order) is in its hands. Factor/floor keep the pool a shortlist.
+_STRATEGY_POOL_FACTOR = 5
+_STRATEGY_POOL_MIN = 50
+
+# same sizing for kb.search lifecycle filtering: backends cap before status
+# filtering, so without over-fetch a window full of retracted hits under-fills
+# the requested limit (#581 / coderabbit).
+_LIFECYCLE_POOL_FACTOR = _STRATEGY_POOL_FACTOR
+_LIFECYCLE_POOL_MIN = _STRATEGY_POOL_MIN
 
 _VALID_BACKENDS = ("auto", "hybrid", "embedding", "fts5", "substring")
 _RERANKER_CACHE: Any | None = None
@@ -308,6 +327,96 @@ def _maybe_rerank(
     return ordered + hits[window_size:]
 
 
+def _retrieval_config(store: KBStore) -> dict[str, Any]:
+    """The ``retrieval`` mapping from config.yaml ({} when absent/broken)."""
+    try:
+        loaded = yaml.safe_load(store.config_path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    retrieval = loaded.get("retrieval")
+    return retrieval if isinstance(retrieval, dict) else {}
+
+
+def _configured_strategy(store: KBStore) -> str | None:
+    """Resolve ``retrieval.strategy`` - a dotted import path to a shipped,
+    human-merged strategy - from config.yaml. Off (None) by default."""
+    dotted = _retrieval_config(store).get("strategy")
+    return dotted if isinstance(dotted, str) and dotted else None
+
+
+def _configured_strategy_params(store: KBStore) -> dict[str, Any] | None:
+    """Resolve ``retrieval.strategy_params`` - the champion family's knobs
+    as bounded data (see ``vouch.strategies.configured``). This is the kit
+    lane's hook into ranking: pure config, validated against one schema by
+    both the koth gate and this runtime path."""
+    params = _retrieval_config(store).get("strategy_params")
+    return params if isinstance(params, dict) else None
+
+
+def _maybe_strategy(
+    store: KBStore,
+    *,
+    query: str,
+    hits: list[tuple[str, str, str, float, str]],
+    limit: int,
+    strategy: strategy_mod.RetrievalStrategy | None = None,
+) -> list[tuple[str, str, str, float, str]]:
+    """Apply a pluggable ranking strategy as the final reorder stage.
+
+    ``strategy`` is passed explicitly by the benchmark (an untrusted
+    submission, wrapped in a sandbox proxy); otherwise a shipped strategy is
+    resolved from ``retrieval.strategy`` config and loaded in-process. With
+    neither, hits pass through byte-identical. A strategy that raises or
+    returns nothing usable leaves the order untouched - retrieval never fails
+    because a ranking plugin misbehaved.
+    """
+    strat = strategy
+    if strat is None:
+        # data before code: bounded params are the lane that iterates
+        # without a human, so when both hooks are set the params arm is
+        # the deliberate experiment. invalid params mean "no strategy",
+        # never a broken retrieval.
+        params = _configured_strategy_params(store)
+        if params is not None:
+            from .strategies import configured
+
+            try:
+                strat = configured.build(params)
+            except Exception:
+                return hits
+        else:
+            dotted = _configured_strategy(store)
+            if not dotted:
+                return hits
+            try:
+                strat = strategy_mod.load_dotted(dotted)
+            except Exception:
+                return hits
+    if not hits:
+        return hits
+    # the strategy addresses hits by id; if two hits somehow share one (a
+    # cross-kind slug collision), a reorder-by-id would be ambiguous, so skip
+    # the stage rather than risk attaching an order to the wrong artifact.
+    ids = [h[1] for h in hits]
+    if len(set(ids)) != len(ids):
+        return hits
+    candidates = [
+        strategy_mod.Candidate(kind=k, id=i, summary=s, score=sc)
+        for k, i, s, sc, _b in hits
+    ]
+    try:
+        ordered_ids = strat.rank(query, candidates, limit=limit)
+    except Exception:
+        return hits
+    by_id = {h[1]: h for h in hits}
+    reordered = strategy_mod.apply_ordering(
+        list(ordered_ids), [(k, i, s, sc) for k, i, s, sc, _b in hits]
+    )
+    return [by_id[h4[1]] for h4 in reordered]
+
+
 def _retrieve(
     store: KBStore,
     query: str,
@@ -397,6 +506,11 @@ def search_kb(
         agent=agent,
     )
     fetch_limit = scoped_fetch_limit(limit, viewer)
+    # over-fetch before lifecycle filtering so retracted/archived hits that
+    # consume the backend window can be replaced by later live candidates.
+    candidate_limit = max(
+        fetch_limit * _LIFECYCLE_POOL_FACTOR, _LIFECYCLE_POOL_MIN,
+    )
     hits: list[tuple[str, str, str, float]] = []
     used = backend_arg
 
@@ -409,13 +523,13 @@ def search_kb(
 
     if backend_arg in ("auto", "hybrid"):
         emb = index_db.search_semantic(
-            store.kb_dir, query, limit=fetch_limit * 2, min_score=min_score,
+            store.kb_dir, query, limit=candidate_limit * 2, min_score=min_score,
         )
         try:
-            fts = index_db.search(store.kb_dir, query, limit=fetch_limit * 2)
+            fts = index_db.search(store.kb_dir, query, limit=candidate_limit * 2)
         except sqlite3.Error:
             fts = []
-        hits = rrf_fuse(emb, fts, limit=fetch_limit)
+        hits = rrf_fuse(emb, fts, limit=candidate_limit)
         if emb and fts:
             used = "hybrid"
         elif emb:
@@ -423,28 +537,31 @@ def search_kb(
         elif fts:
             used = "fts5"
         if not hits and backend_arg == "auto":
-            hits = store.search_substring(query, limit=fetch_limit)
+            hits = store.search_substring(query, limit=candidate_limit)
             used = "substring"
     elif backend_arg == "embedding":
         hits = index_db.search_semantic(
-            store.kb_dir, query, limit=fetch_limit, min_score=min_score,
+            store.kb_dir, query, limit=candidate_limit, min_score=min_score,
         )
         used = "embedding"
     elif backend_arg == "fts5":
         try:
-            hits = index_db.search(store.kb_dir, query, limit=fetch_limit)
+            hits = index_db.search(store.kb_dir, query, limit=candidate_limit)
         except sqlite3.Error:
             hits = []
         used = "fts5"
     else:  # substring
-        hits = store.search_substring(query, limit=fetch_limit)
+        hits = store.search_substring(query, limit=candidate_limit)
         used = "substring"
 
     semantic_ok = index_db.semantic_search_available()
-    scoped = filter_hits(store, hits, viewer, limit=limit)
+    # scope first without a limit so status filtering can refill the window —
+    # otherwise a page of retracted hits would leave search under-filled.
+    scoped = filter_hits(store, hits, viewer, limit=None)
+    live = _filter_live_hits(store, scoped, limit=limit)
     hits_list = [
         {"kind": k, "id": i, "snippet": sn, "score": sc, "backend": used}
-        for k, i, sn, sc in scoped
+        for k, i, sn, sc in live
     ]
     result: dict[str, Any] = {
         "backend": used,
@@ -467,6 +584,40 @@ def search_kb(
         result, store, query=query,
         exclude_ids=[str(hit["id"]) for hit in hits_list],
     )
+
+
+def _filter_live_hits(
+    store: KBStore,
+    hits: list[tuple[str, str, str, float]],
+    *,
+    limit: int | None = None,
+) -> list[tuple[str, str, str, float]]:
+    """Drop retracted claims and archived pages from search hits.
+
+    ``kb.context`` already applies ``_RETRACTED_CLAIM_STATUSES``; ``kb.search``
+    must do the same or archive/supersede/redact become decorative on the
+    surface agents use for detail after recall (#581).
+    """
+    kept: list[tuple[str, str, str, float]] = []
+    for kind, artifact_id, summary, score in hits:
+        if kind == "claim":
+            try:
+                claim = store.get_claim(artifact_id)
+            except ArtifactNotFoundError:
+                continue
+            if claim.status in _RETRACTED_CLAIM_STATUSES:
+                continue
+        elif kind == "page":
+            try:
+                page = store.get_page(artifact_id)
+            except ArtifactNotFoundError:
+                continue
+            if page.status is PageStatus.ARCHIVED:
+                continue
+        kept.append((kind, artifact_id, summary, score))
+        if limit is not None and len(kept) >= limit:
+            break
+    return kept
 
 
 def _enrich_summary(store: KBStore, kind: str, artifact_id: str, summary: str) -> str:
@@ -602,13 +753,24 @@ def build_context_pack(
     graph_depth: int = 1,
     graph_limit: int = 20,
     graph_rel_types: list[str] | None = None,
+    strategy: strategy_mod.RetrievalStrategy | None = None,
 ) -> ContextPack | dict[str, Any]:
     viewer = viewer_from(
         config_path=store.config_path,
         project=project,
         agent=agent,
     )
-    hits = _retrieve(store, query, limit, viewer)
+    # with a ranking strategy active, retrieval over-fetches a bounded pool
+    # and the strategy's order decides which ``limit`` survive the cut —
+    # de-prioritising a candidate below the window excludes it from the
+    # pack. without one, the pool IS the limit and nothing changes. the
+    # pool is bounded so a strategy ranks a shortlist, never the whole kb.
+    strategy_active = strategy is not None or _configured_strategy(store)
+    pool = max(limit * _STRATEGY_POOL_FACTOR, _STRATEGY_POOL_MIN) if strategy_active else limit
+    hits = _retrieve(store, query, pool, viewer)
+    hits = _maybe_strategy(
+        store, query=query, hits=hits, limit=limit, strategy=strategy
+    )[:limit]
     items: list[ContextItem] = []
     for kind, hid, summary, score, backend in hits:
         cites: list[str] = []

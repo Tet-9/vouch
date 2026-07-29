@@ -31,6 +31,55 @@ touch behavior.
   path to the capture → approve → compile → recall loop.
 - Tests, fixtures, CI hardening, and developer-experience improvements.
 
+## Competition PRs (the koth ladders)
+
+The competition has its own PR shapes, and the gates enforce them
+mechanically — a PR that doesn't match is classified as a normal PR and
+just gets human review. Full walkthrough:
+[docs/mining-on-vouch.md](docs/mining-on-vouch.md).
+
+**Engine lane — the main competition (submit ranking code):**
+
+- The PR adds **exactly one new file**: `contrib/strategies/<name>.py`
+  (letters, digits, underscores). Nothing else in the diff — not
+  `baseline.py`, not the engine, not tests.
+- Base branch: **`koth-ladder`**, not `main`.
+- The file implements `rank(query, candidates, *, limit) -> list[str]`
+  (see [docs/koth-strategy-lane.md](docs/koth-strategy-lane.md)). It runs
+  in a sandbox: no network, no subprocesses, no file writes, hard
+  resource limits. A crashing strategy scores as the baseline, silently —
+  test locally first.
+- Practice with the exact CI loop before pushing:
+
+  ```bash
+  vouch bench run --seeds 1,2,3,4,5,6,7,8,9,10,11,12 \
+      --strategy contrib/strategies/<name>.py \
+      --against contrib/strategies/baseline.py
+  ```
+
+- The gate scores your PR against the reigning champion over the day's
+  seeds and posts the scorecard. **Engine code never auto-merges**: the
+  highest verified score merges after a human checks for benchmark-keyed
+  logic (lookup tables, category-pattern dispatch, generator-template
+  matching — instant disqualifiers). A merged winner ships as a default
+  and is credited in the changelog.
+
+**Kit lane — the 10-minute warm-up (config only):**
+
+- The PR touches **exactly one file**:
+  `competition/kits/current/kit.yaml`. Allowed keys and bounds are
+  enforced by `.github/scripts/validate_kit.py`.
+- Base branch: **`koth-ladder`**. On a dethrone the PR auto-merges (data
+  cannot execute); against `main` it is scored and commented only.
+- Know the ceiling: most kit knobs cannot move the bench — this lane is
+  for learning the loop, not for winning the season.
+
+**Both lanes:** seeds derive from the champion sha and the utc date, so
+every scorecard is reproducible offline — the comment includes the exact
+command. Payouts and season rules:
+[docs/vouchbench-seasons.md](docs/vouchbench-seasons.md). Titles follow
+the same conventional-commit format as everything else.
+
 ## What we won't merge
 
 - Anything that bypasses the review gate from the agent side

@@ -446,6 +446,27 @@ def test_clear_apply_archives_auto_preserves_human_and_audits(
     assert auto_id in events[0].object_ids
 
 
+def test_clear_date_only_before_does_not_500(
+    client: TestClient, store: KBStore,
+) -> None:
+    """`before=2026-07-01` is the shape the view's own error text advertises.
+
+    It parses to a naive datetime; comparing it against aware `created_at`
+    used to raise TypeError out of both handlers instead of filtering.
+    """
+    auto_id = _auto_approved_claim(store, "auto cruft with a date filter")
+
+    r = client.get("/clear-claims?before=2999-01-01")
+    assert r.status_code == 200
+    assert auto_id in r.text
+
+    r = client.post(
+        "/clear-claims", data={"before": "2999-01-01"}, follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert store.get_claim(auto_id).status.value == "archived"
+
+
 def test_clear_invalid_before_shows_inline_error(
     client: TestClient, store: KBStore,
 ) -> None:

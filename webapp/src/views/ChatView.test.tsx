@@ -312,7 +312,7 @@ test('search mode toggle routes plain input to kb.search', async () => {
   )
 })
 
-test('claim hits open the drawer; source hits are inert', async () => {
+test('claim and source hits both open the drawer', async () => {
   vi.mocked(rpc).mockImplementation(async (_c, method) => {
     if (method === 'kb.search') return SEARCH
     if (method === 'kb.read_claim')
@@ -326,6 +326,6 @@ test('claim hits open the drawer; source hits are inert', async () => {
   const claimHit = await screen.findByRole('button', { name: /the-vouch-http-server/i })
   await userEvent.click(claimHit)
   expect(await screen.findByTestId('drawer')).toBeInTheDocument()
-  // source hit renders as a non-button card
-  expect(screen.queryByRole('button', { name: /ea1cc5801740a467/i })).not.toBeInTheDocument()
+  // source hits are drawer targets too since kb.read_source landed
+  expect(screen.getByRole('button', { name: /ea1cc5801740a467/i })).toBeInTheDocument()
 })

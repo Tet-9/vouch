@@ -21,6 +21,7 @@ import yaml
 from . import audit as audit_mod
 from . import capture, enrich, llm_draft
 from . import compile as compile_mod
+from .config_coerce import coerce_bool
 from .llm_draft import LLMDraftError
 from .models import ProposalStatus
 from .proposals import _slugify, propose_page, reject
@@ -71,7 +72,7 @@ def load_split_config(store: KBStore) -> SplitConfig:
         return SplitConfig()
     llm_cmd = raw.get("llm_cmd")
     return SplitConfig(
-        enabled=bool(raw.get("enabled", True)),
+        enabled=coerce_bool(raw.get("enabled", True), True),
         llm_cmd=str(llm_cmd) if llm_cmd else None,
         threshold_observations=_coerce(
             raw.get("threshold_observations", DEFAULT_THRESHOLD_OBSERVATIONS),

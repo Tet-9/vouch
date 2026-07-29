@@ -271,6 +271,24 @@ def _h_read_relation(p: dict) -> dict:
     )
 
 
+def _h_read_evidence(p: dict) -> dict:
+    store = _store()
+    ev = store.get_evidence(p["evidence_id"])
+    result = ev.model_dump(mode="json")
+    return hot_mod.attach_hot_memory(  # type: ignore[no-any-return]
+        result, store, query=ev.quote,
+    )
+
+
+def _h_read_source(p: dict) -> dict:
+    store = _store()
+    src = store.get_source(p["source_id"])
+    result = src.model_dump(mode="json")
+    return hot_mod.attach_hot_memory(  # type: ignore[no-any-return]
+        result, store, query=src.title,
+    )
+
+
 def _h_diff(p: dict) -> dict:
     from dataclasses import asdict
 
@@ -920,6 +938,8 @@ HANDLERS: dict[str, Callable[[dict], Any]] = {
     "kb.read_claim": _h_read_claim,
     "kb.read_entity": _h_read_entity,
     "kb.read_relation": _h_read_relation,
+    "kb.read_evidence": _h_read_evidence,
+    "kb.read_source": _h_read_source,
     "kb.diff": _h_diff,
     "kb.list_pages": _h_list_pages,
     "kb.list_claims": _h_list_claims,

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArtifactDrawer } from '../components/ArtifactDrawer'
-import type { DrawerTarget } from '../components/ArtifactDrawer'
+import type { DrawerTarget, OpenKind } from '../components/ArtifactDrawer'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorCard } from '../components/ErrorCard'
 import { useErrorToast } from '../components/Toast'
@@ -12,6 +12,8 @@ import type { Claim, Entity, Page, Relation } from '../lib/types'
 
 type Kind = 'claim' | 'page' | 'entity' | 'relation'
 const KINDS: readonly Kind[] = ['claim', 'page', 'entity', 'relation']
+/** Kinds the deep-linked drawer accepts — a superset of the list tabs. */
+const DRAWER_KINDS: readonly OpenKind[] = [...KINDS, 'evidence', 'source']
 type Artifact = Claim | Page | Entity | Relation
 
 const TABS: { kind: Kind; label: string; method: string }[] = [
@@ -51,10 +53,10 @@ export function BrowseView() {
   const drawerProject =
     scoped.find((p) => p.conn.endpoint === search.get('p')) ?? (aggregated ? null : (scoped[0] ?? null))
   const drawer: DrawerTarget =
-    params.kind && params.id && KINDS.includes(params.kind as Kind) && drawerProject
-      ? { kind: params.kind as Kind, id: params.id }
+    params.kind && params.id && DRAWER_KINDS.includes(params.kind as OpenKind) && drawerProject
+      ? { kind: params.kind as OpenKind, id: params.id }
       : null
-  const openDrawer = (kind: Kind, id: string, project: ProjectState) => {
+  const openDrawer = (kind: OpenKind, id: string, project: ProjectState) => {
     const p = aggregated ? `?p=${encodeURIComponent(project.conn.endpoint)}` : ''
     navigate(`/browse/${kind}/${encodeURIComponent(id)}${p}`)
   }
@@ -157,7 +159,12 @@ export function BrowseView() {
         </ul>
       </div>
 
-      <ArtifactDrawer target={drawer} project={drawerProject} onClose={closeDrawer} />
+      <ArtifactDrawer
+        target={drawer}
+        project={drawerProject}
+        onClose={closeDrawer}
+        onOpen={(kind, id) => drawerProject && openDrawer(kind, id, drawerProject)}
+      />
     </div>
   )
 }

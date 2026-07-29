@@ -180,3 +180,52 @@ def test_auto_approve_receipts_leaves_id_conflict_pending(store: KBStore) -> Non
     assert other is not None
     assert auto_approve_receipts(store) == []
     assert store.get_proposal(other.id).status is ProposalStatus.PENDING
+
+
+def test_receipt_claim_blocked_when_gate_quoted_false_string(store: KBStore) -> None:
+    """Regression: bool("false") is True in plain Python. Before
+    _review_config() normalized this field, a mistakenly-quoted
+    `auto_approve_on_receipt: "false"` in config.yaml was read as *enabled*
+    by the raw truthy checks in resolve_pending_receipt_claim/approve,
+    silently granting self-approval an operator explicitly meant to disable."""
+    store.config_path.write_text(
+        "review:\n  auto_approve_on_receipt: \"false\"\n", encoding="utf-8"
+    )
+    src = store.put_source(b"the sky is blue")
+    res = propose_quoted_claim(
+        store, text="the sky is blue", source_id=src.id,
+        quote="the sky is blue", proposed_by="agent-a",
+    )
+    assert res is not None
+    with pytest.raises(ProposalError, match="forbidden_self_approval"):
+        approve(store, res.id, approved_by="agent-a")
+
+
+def test_auto_approve_receipts_noop_when_gate_quoted_false_string(store: KBStore) -> None:
+    """Same regression as above, exercised through the batch drain path."""
+    store.config_path.write_text(
+        "review:\n  auto_approve_on_receipt: \"false\"\n", encoding="utf-8"
+    )
+    src = store.put_source(b"alpha beta")
+    propose_quoted_claim(
+        store, text="mentions beta", source_id=src.id, quote="beta",
+        proposed_by="agent-a",
+    )
+    assert auto_approve_receipts(store) == []
+
+
+def test_receipt_verified_claim_self_approves_when_gate_quoted_true_string(
+    store: KBStore,
+) -> None:
+    """The quoted-string fix must not break the legitimate quoted-"true" case."""
+    store.config_path.write_text(
+        "review:\n  auto_approve_on_receipt: \"true\"\n", encoding="utf-8"
+    )
+    src = store.put_source(b"the sky is blue today")
+    res = propose_quoted_claim(
+        store, text="the sky is blue", source_id=src.id,
+        quote="the sky is blue", proposed_by="agent-a",
+    )
+    assert res is not None
+    claim = approve(store, res.id, approved_by="agent-a")
+    assert store.get_claim(claim.id).text == "the sky is blue"

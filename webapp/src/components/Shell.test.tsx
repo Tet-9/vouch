@@ -40,6 +40,7 @@ test('shows nav, endpoint pill, and outlet content when connected', async () => 
   expect(screen.getByRole('link', { name: /chat/i })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: /review/i })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: /browse/i })).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: /sessions/i })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: /stats/i })).toBeInTheDocument()
   expect(screen.getByText('home content')).toBeInTheDocument()
   await waitFor(() => expect(screen.getByText('127.0.0.1:8731')).toBeInTheDocument())

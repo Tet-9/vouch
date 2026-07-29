@@ -1,4 +1,4 @@
-import { Activity, BadgeCheck, FileClock, Inbox, LayoutDashboard, Library, MessageSquare, Plug, SunMoon } from 'lucide-react'
+import { Activity, BadgeCheck, FileClock, History, Inbox, LayoutDashboard, Library, MessageSquare, Plug, SunMoon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ConnectDialog } from '../connection/ConnectDialog'
@@ -16,6 +16,7 @@ const NAV = [
   { to: '/pending', label: 'Pending', icon: Inbox },
   { to: '/claims', label: 'Claims', icon: BadgeCheck },
   { to: '/browse', label: 'Browse', icon: Library },
+  { to: '/sessions', label: 'Sessions', icon: History },
   { to: '/stats', label: 'Stats', icon: Activity },
 ]
 
@@ -25,6 +26,7 @@ const TITLES: Record<string, string> = {
   '/pending': 'Pending review',
   '/claims': 'Approved claims',
   '/browse': 'Knowledge',
+  '/sessions': 'Sessions — compiled conversation history',
   '/dashboard': 'Dashboard — KB activity',
   '/stats': 'Stats & health',
 }

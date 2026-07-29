@@ -6,7 +6,49 @@ All notable changes to vouch are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+- **sandbox docker argv on Windows** (#582): omit `--user uid:gid` when
+  `os.getuid` / `os.getgid` are unavailable so sandboxed dual-solve no
+  longer raises `AttributeError` while building the docker command.
+- **`kb.session_transcript` handler test needs a KB** : `test_handler_returns_degraded_when_absent` now chdirs into a temp KB and points Claude/Codex search roots at empty dirs, so the handler can return the degraded payload instead of raising `KBNotFoundError`.
+)
+- **`kb.search` excludes retracted claims and archived pages** (#581):
+  `search_kb` now drops `ARCHIVED` / `SUPERSEDED` / `REDACTED` claims and
+  `ARCHIVED` pages the same way `kb.context` already does, so lifecycle
+  controls are not decorative on the detail-search surface. backends
+  over-fetch a candidate pool before that filter so retracted top-hits
+  cannot starve the requested result limit.
+- **bench grading saw highlight markup**: retrieval wraps query-matched
+  terms in guillemets, which broke the bench's substring checks exactly
+  on query-relevant claims — expected values read as missing (deflating
+  recall categories) and highlighted forbidden values slipped past the
+  zeroing (inflating dump-guard categories). grading now strips the
+  markers; absolute bench scores shift, paired comparisons were fair
+  either way. the reference baseline table is refreshed.
+### Changed
+- **auto approval is the default** (`review.approver_role: trusted-agent`
+  in the starter config): a fresh KB approves the capturing agent's
+  proposals with no human step. nothing bypasses the gate — every write
+  still flows through `proposals.approve()` with one audit event and the
+  `auto_approved` stamp; the new `proposals.auto_approve_pending` drain
+  (run from capture finalize) clears claims, pages, entities and
+  relations, rejects duplicates, and still holds protected page kinds,
+  dead-reference pages, id conflicts and delete proposals for a
+  reviewer. remove `approver_role` from `config.yaml` to put writes back
+  behind `vouch review`.
+
 ### Added
+- **shipped ranking champion** (`vouch.strategies.provenance`): the
+  engine-lane winner (provenance-aware ranking — hearsay and stored
+  instructions demoted, change-of-state phrasing boosted) now ships in
+  the package. new KBs get it via the starter config
+  (`retrieval.strategy`); existing KBs keep byte-identical ordering until
+  they add the key, and `strategy: null` opts out. the competition
+  champion `contrib/strategies/baseline.py` delegates to it, so
+  challengers now have to beat real ranking, not identity order. with a
+  strategy active, retrieval over-fetches a bounded candidate pool and
+  the strategy's top-`limit` survive — de-prioritising below the window
+  genuinely excludes a candidate from the pack.
 - **session-mode answer memory** (`capture.answer_mode`, default `session`):
   claims are extracted once at SessionEnd from the full transcript history
   (`capture_session_answers`, wired into `capture finalize`) instead of on
@@ -98,6 +140,38 @@ All notable changes to vouch are documented here. Format follows
   folder — recall there reads all of it, and the digest header, the
   per-prompt block, the session banner, `vouch status` and the opt-in
   question all say so rather than calling it "this repo's" knowledge.
+
+### Fixed
+- `clear` reads a naive `before` as utc instead of raising. a date-only
+  cutoff — `2026-07-01`, the shape the cli help, the console's own error
+  text, and the `kb.clear` docs all advertise — parses naive, and comparing
+  it against a claim's aware `created_at` raised `TypeError`: a traceback
+  from `vouch claims-clear --before`, an error response over mcp/jsonl, and
+  an unhandled 500 on the review console's `/clear-claims`. normalised at
+  the `lifecycle.clear_claims` chokepoint, so all four surfaces are fixed
+  at once; the audit event records the normalised cutoff.
+### Added
+- **ingest selection knob (`vouch ingest --max-claims / --budget-chars`).**
+  capture used to file every substantive sentence of a source — complete,
+  but a restatement of the whole document rather than the facts worth a
+  claim. `extract.select_spans` ranks candidate spans by information density
+  (sum over distinct content words of `1 / document-frequency`, so rare
+  specific terms outweigh stopword-heavy filler) and keeps the best under a
+  claim-count or character budget. it is deterministic and llm-free — and it
+  only ever returns a *subset* of the verbatim spans, never a paraphrase, so
+  every kept claim's receipt still verifies by construction. unset, ingest
+  keeps every span exactly as before (the unbudgeted baseline is unchanged).
+  this is the selection step the compiler thesis needs: fewer, denser claims
+  are what move accuracy-per-token against the grep baseline.
+
+### Fixed
+- **extraction no longer fractures dotted numbers.** `segment_source` split
+  on every `.`, so a version or decimal (`6.8.3`, `3.14`) was broken across
+  segment boundaries and its answer atom fell out of every span — measured at
+  ~11% of the ground-truth facts lost on a synthetic lookup corpus *before any
+  budget was applied*. a `.` flanked by digits is now kept inside the span
+  (sentence-ending periods are unaffected), lifting the recall ceiling of the
+  whole ingest pipeline from 89% to 100% of facts on that corpus.
 
 ## [1.5.0] — 2026-07-20
 

@@ -307,6 +307,10 @@ def test_approve_delete_idempotent_path_deindexes(store: KBStore) -> None:
 
 
 def test_delete_forbids_self_approval(store: KBStore) -> None:
+    # pin the gate closed: the starter config trusts the agent by default.
+    store.config_path.write_text(
+        "review:\n  auto_approve_on_receipt: false\n", encoding="utf-8"
+    )
     _claim(store, "c1")
     pr = propose_delete(store, target_kind="claim", target_id="c1", proposed_by="same")
     with pytest.raises(ProposalError, match="forbidden_self_approval"):

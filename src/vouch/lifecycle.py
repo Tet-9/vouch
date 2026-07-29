@@ -32,6 +32,12 @@ class LifecycleError(RuntimeError):
     pass
 
 
+def _utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
 def supersede(
     store: KBStore,
     *,
@@ -190,13 +196,16 @@ def clear_claims(
         store: Knowledge base store
         auto_only: If True, only clear auto-approved claims (auto_approved=True).
                    If False, clear all claims matching date filter.
-        before: If set, only clear claims created before this datetime.
+        before: If set, only clear claims created before this datetime. A naive
+                value is read as UTC — `--before 2026-07-01` is the documented
+                shape and parses naive, while `created_at` is always aware.
         actor: Who is performing the operation.
         dry_run: If True, don't write changes, just return what would be cleared.
 
     Returns:
         List of claims that were (or would be) archived.
     """
+    cutoff = _utc(before) if before is not None else None
     all_claims = store.list_claims()
     to_clear: list[Claim] = []
 
@@ -210,7 +219,7 @@ def clear_claims(
             continue
 
         # Filter by date range
-        if before and claim.created_at >= before:
+        if cutoff and _utc(claim.created_at) >= cutoff:
             continue
 
         to_clear.append(claim)
@@ -232,7 +241,7 @@ def clear_claims(
                 data={
                     "count": len(to_clear),
                     "auto_only": auto_only,
-                    "before": before.isoformat() if before else None,
+                    "before": cutoff.isoformat() if cutoff else None,
                 },
             )
 

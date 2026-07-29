@@ -333,6 +333,15 @@ def test_covered_methods_attach_sidebar_when_kb_has_recent_claims(
                        target="ent-b")
         store.put_relation(rel)
         params = {"relation_id": "rel-ab"}
+    elif method == "kb.read_evidence":
+        from vouch.models import Evidence
+        src = store.put_source(b"kafka retention is 7 days")
+        store.put_evidence(Evidence(id="ev-k", source_id=src.id, locator="L1",
+                                    quote="kafka retention is 7 days"))
+        params = {"evidence_id": "ev-k"}
+    elif method == "kb.read_source":
+        src = store.put_source(b"kafka broker config notes", title="kafka-notes")
+        params = {"source_id": src.id}
 
     resp = handle_request({"id": "cov", "method": method, "params": params})
     assert resp["ok"], resp

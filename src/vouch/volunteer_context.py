@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from . import hot_memory
+from .config_coerce import coerce_bool
 from .context import _RETRACTED_CLAIM_STATUSES
 from .models import Session
 from .scoping import ViewerContext, viewer_from
@@ -74,7 +75,7 @@ def load_config(store: KBStore) -> VolunteerConfig:
     raw = loaded.get("volunteer")
     if not isinstance(raw, dict):
         return VolunteerConfig()
-    enabled = bool(raw.get("enabled", True))
+    enabled = coerce_bool(raw.get("enabled", True), True)
     threshold = float(raw.get("threshold", DEFAULT_THRESHOLD))
     throttle = float(raw.get("throttle_seconds", DEFAULT_THROTTLE_SECONDS))
     poll = float(raw.get("poll_interval_seconds", DEFAULT_POLL_INTERVAL))

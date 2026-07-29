@@ -74,6 +74,13 @@ def test_load_config_override(store: KBStore) -> None:
     assert cfg.max_chars == 500
 
 
+def test_load_config_quoted_false_does_not_enable(store: KBStore) -> None:
+    """Regression: bool("false") is True in plain Python, so a mistakenly
+    quoted `enabled: "false"` previously silently kept recall enabled."""
+    store.config_path.write_text('recall:\n  enabled: "false"\n', encoding="utf-8")
+    assert recall.load_config(store).enabled is False
+
+
 def test_starter_config_has_recall_namespace() -> None:
     assert _starter_config()["recall"]["enabled"] is True
 

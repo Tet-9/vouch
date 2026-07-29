@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ArtifactDrawer } from '../components/ArtifactDrawer'
-import type { DrawerTarget } from '../components/ArtifactDrawer'
+import type { DrawerTarget, OpenKind } from '../components/ArtifactDrawer'
 import { EmptyState } from '../components/EmptyState'
 import { Markdown } from '../components/Markdown'
 import { useToast } from '../components/Toast'
@@ -117,7 +117,7 @@ function AnswerBody({
   )
 }
 
-const DRAWER_KINDS = new Set(['claim', 'page', 'entity', 'relation'])
+const DRAWER_KINDS = new Set(['claim', 'page', 'entity', 'relation', 'evidence', 'source'])
 
 function HitSnippet({ snippet }: { snippet: string }) {
   return (
@@ -138,7 +138,7 @@ function SearchHits({
   onOpen,
 }: {
   result: SearchResult
-  onOpen: (kind: 'claim' | 'page' | 'entity' | 'relation', id: string) => void
+  onOpen: (kind: OpenKind, id: string) => void
 }) {
   if (result.hits.length === 0) {
     return <p className="text-sm italic text-sepia">No hits.</p>
@@ -165,7 +165,7 @@ function SearchHits({
         return clickable ? (
           <button
             key={hit.id}
-            onClick={() => onOpen(hit.kind as 'claim' | 'page' | 'entity' | 'relation', hit.id)}
+            onClick={() => onOpen(hit.kind as OpenKind, hit.id)}
             className="block w-full rounded-xl border border-rule bg-paper px-3 py-2.5 text-left transition hover:border-accent/50"
           >
             {body}
@@ -530,7 +530,12 @@ export function ChatView() {
         </button>
       </form>
 
-      <ArtifactDrawer target={drawer} project={active} onClose={() => setDrawer(null)} />
+      <ArtifactDrawer
+        target={drawer}
+        project={active}
+        onClose={() => setDrawer(null)}
+        onOpen={(kind, id) => setDrawer({ kind, id })}
+      />
     </div>
   )
 }

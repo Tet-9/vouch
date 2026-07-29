@@ -18,6 +18,7 @@ import yaml
 from pydantic import ValidationError
 
 from . import admission, audit, index_db
+from .config_coerce import coerce_bool
 from .models import (
     ArtifactScope,
     Claim,
@@ -513,7 +514,16 @@ def propose_delete(
 
 
 def _review_config(store: KBStore) -> dict[str, Any]:
-    """The ``review:`` section of config.yaml, or {} if absent/unreadable."""
+    """the ``review:`` section of config.yaml, or {} if absent/unreadable.
+
+    ``auto_approve_on_receipt`` is normalized to a real bool here -- the
+    single source of truth every caller below reads from -- so a
+    mistakenly-quoted ``auto_approve_on_receipt: "false"`` in config.yaml
+    can never be silently treated as enabled by one call site while another
+    (correctly) treats the same value as disabled. callers that still wrap
+    this in their own ``bool(...)`` are unaffected: bool() on an already-real
+    bool is a no-op.
+    """
     try:
         loaded = yaml.safe_load(
             (store.kb_dir / "config.yaml").read_text(encoding="utf-8")
@@ -521,7 +531,11 @@ def _review_config(store: KBStore) -> dict[str, Any]:
     except Exception:
         return {}
     if isinstance(loaded, dict) and isinstance(loaded.get("review"), dict):
-        return loaded["review"]
+        review = dict(loaded["review"])
+        review["auto_approve_on_receipt"] = coerce_bool(
+            review.get("auto_approve_on_receipt"), False
+        )
+        return review
     return {}
 
 
@@ -653,6 +667,61 @@ def auto_approve_receipts(
         )
         if claim is not None:
             approved.append(claim)
+    return approved
+
+
+def auto_approve_pending(
+    store: KBStore, *, actor: str | None = None
+) -> list[Claim | Page | Entity | Relation]:
+    """Approve every pending proposal the configured gate allows.
+
+    The full drain behind auto-approval-by-default. Under
+    ``review.approver_role: trusted-agent`` every pending proposal
+    self-approves through the normal ``approve()`` path — one audit event
+    per artifact, never a parallel write path. Claims go through
+    ``resolve_pending_receipt_claim`` so duplicates of durable claims are
+    closed instead of piling up; pages, entities and relations are approved
+    unless something still blocks them. What stays pending is exactly the
+    human-call residue: protected page kinds, pages with dead claim
+    references, an id already durable with different content, and DELETE
+    proposals (retracting durable knowledge is never drained mechanically).
+
+    Without trusted-agent this falls back to the receipt drain
+    (``auto_approve_receipts``), which is itself a no-op when
+    ``review.auto_approve_on_receipt`` is off — the review gate is honoured,
+    never silently bypassed.
+    """
+    review_cfg = _review_config(store)
+    if review_cfg.get("approver_role") != "trusted-agent":
+        return list(auto_approve_receipts(store, actor=actor))
+    approved: list[Claim | Page | Entity | Relation] = []
+    for proposal in store.list_proposals(ProposalStatus.PENDING):
+        if proposal.kind == ProposalKind.DELETE:
+            continue
+        if proposal.kind == ProposalKind.CLAIM:
+            claim = resolve_pending_receipt_claim(
+                store, proposal,
+                actor=actor or proposal.proposed_by,
+                reason="trusted-agent — auto-approved",
+            )
+            if claim is not None:
+                approved.append(claim)
+            continue
+        approver = actor or proposal.proposed_by
+        if check_approvable(store, proposal.id, approved_by=approver) is not None:
+            continue
+        try:
+            approved.append(
+                approve(
+                    store, proposal.id, approved_by=approver,
+                    reason="trusted-agent — auto-approved",
+                )
+            )
+        except ProposalError:
+            # check_approvable is a dry-run; the write itself can still fail
+            # (e.g. a claim ref deleted between check and approve). Left
+            # pending for a human, the drain survives.
+            continue
     return approved
 
 

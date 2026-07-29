@@ -82,6 +82,16 @@ def test_scan_disabled_via_config_is_noop(store: KBStore) -> None:
     assert store.list_proposals(ProposalStatus.PENDING) == []
 
 
+def test_load_config_quoted_false_does_not_enable(store: KBStore) -> None:
+    """Regression: bool("false") is True in plain Python, so a mistakenly
+    quoted `enabled: "false"` previously silently kept inbox scanning on."""
+    store.config_path.write_text(
+        store.config_path.read_text(encoding="utf-8") + '\ninbox:\n  enabled: "false"\n',
+        encoding="utf-8",
+    )
+    assert inbox.load_config(store).enabled is False
+
+
 def test_watch_is_bounded_by_iterations(store: KBStore) -> None:
     _drop(store, "notes.md")
     results: list[inbox.ScanResult] = []

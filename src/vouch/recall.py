@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 import yaml
 
+from .config_coerce import coerce_bool
 from .context import _RETRACTED_CLAIM_STATUSES
 from .scoping import ViewerContext, is_visible, viewer_from
 from .storage import KBStore
@@ -45,7 +46,7 @@ def load_config(store: KBStore) -> RecallConfig:
     if not isinstance(raw, dict):
         return RecallConfig()
     return RecallConfig(
-        enabled=bool(raw.get("enabled", DEFAULT_ENABLED)),
+        enabled=coerce_bool(raw.get("enabled", DEFAULT_ENABLED), DEFAULT_ENABLED),
         max_chars=int(raw.get("max_chars", DEFAULT_MAX_CHARS)),
     )
 

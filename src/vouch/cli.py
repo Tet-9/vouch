@@ -29,6 +29,7 @@ from . import __version__, bundle, health, hub_client, volunteer_context
 from . import adopt as adopt_mod
 from . import audit as audit_mod
 from . import capture as capture_mod
+from . import chatgpt_import as chatgpt_import_mod
 from . import codex_rollout as codex_rollout_mod
 from . import compile as compile_mod
 from . import digest as digest_mod
@@ -111,6 +112,7 @@ def _cli_errors() -> Iterator[None]:
         ProposalError,
         LifecycleError,
         migrations_mod.MigrationError,
+        chatgpt_import_mod.ChatGPTImportError,
         codex_rollout_mod.CodexRolloutError,
     ) as e:
         raise click.ClickException(str(e)) from e
@@ -1513,6 +1515,26 @@ def read_relation(relation_id: str) -> None:
     click.echo(yaml.safe_dump(relation.model_dump(mode="json"), sort_keys=False))
 
 
+@cli.command(name="read-evidence")
+@click.argument("evidence_id")
+def read_evidence(evidence_id: str) -> None:
+    """Read an evidence record by id."""
+    store = _load_store()
+    with _cli_errors():
+        ev = store.get_evidence(evidence_id)
+    click.echo(yaml.safe_dump(ev.model_dump(mode="json"), sort_keys=False))
+
+
+@cli.command(name="read-source")
+@click.argument("source_id")
+def read_source(source_id: str) -> None:
+    """Read a registered source's metadata by id."""
+    store = _load_store()
+    with _cli_errors():
+        src = store.get_source(source_id)
+    click.echo(yaml.safe_dump(src.model_dump(mode="json"), sort_keys=False))
+
+
 @cli.command(name="list-claims")
 def list_claims() -> None:
     """List all approved claims."""
@@ -1866,9 +1888,19 @@ def propose_claim_cmd(
     "--no-approve", is_flag=True,
     help="File the claims but never auto-approve, even if the receipt gate is on.",
 )
+@click.option(
+    "--max-claims", type=int, default=None,
+    help="Keep only the N most information-dense spans (density selection). "
+         "Unset captures every quotable span.",
+)
+@click.option(
+    "--budget-chars", type=int, default=None,
+    help="Keep the densest spans that fit within this many characters.",
+)
 @click.option("--json", "as_json", is_flag=True, help="Emit source id + counts as json.")
 def ingest_cmd(
-    path: Path, title: str | None, no_approve: bool, as_json: bool
+    path: Path, title: str | None, no_approve: bool,
+    max_claims: int | None, budget_chars: int | None, as_json: bool,
 ) -> None:
     """Ingest a file as a source and extract receipt-backed claims from it.
 
@@ -1876,6 +1908,10 @@ def ingest_cmd(
     against the source is approved with no human -- "run vouch on a doc and it
     just captures the knowledge." Without the gate the claims are filed pending
     for review; a claim that cannot quote its source is never rubber-stamped.
+
+    --max-claims / --budget-chars bound the capture to the most informative
+    spans instead of restating the whole document -- the selection knob that
+    keeps the facts worth a claim and drops filler.
     """
     from . import extract as extract_mod
 
@@ -1886,6 +1922,8 @@ def ingest_cmd(
             proposed_by=_whoami(),
             title=title or path.name,
             auto_approve=not no_approve,
+            max_claims=max_claims,
+            budget_chars=budget_chars,
         )
     pending = sum(
         1 for p in store.list_proposals(ProposalStatus.PENDING)
@@ -4184,6 +4222,52 @@ def import_proposals_cmd(bundle_path: str, origin_kb: str | None) -> None:
     _emit_json(r)
 
 
+@cli.command("import-chatgpt")
+@click.argument(
+    "export_path", type=click.Path(exists=True, dir_okay=False, path_type=Path)
+)
+@click.option(
+    "--limit", type=int, default=None,
+    help="Import at most N conversations, in export order.",
+)
+@click.option("--dry-run", is_flag=True, help="Parse and report; file nothing.")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable report.")
+def import_chatgpt_cmd(
+    export_path: Path, limit: int | None, dry_run: bool, as_json: bool
+) -> None:
+    """Import a ChatGPT history export as PENDING session-page proposals.
+
+    Takes the data-export ZIP OpenAI mails out (or its conversations.json)
+    and files one review-gated session page per conversation -- every user
+    turn paired with the assistant turn that answered it, cited to a
+    per-conversation source. Re-importing is idempotent: unchanged
+    conversations are no-ops, grown ones refresh their PENDING proposal in
+    place, decided ones stay decided. Review with `vouch review`.
+    """
+    store = _load_store()
+    with _cli_errors():
+        report = chatgpt_import_mod.import_export(
+            store, export_path, limit=limit, dry_run=dry_run,
+            generated_at=datetime.now(UTC).isoformat(),
+        )
+    if as_json:
+        _emit_json(report)
+        return
+    verb = "would import" if dry_run else "imported"
+    _echo(
+        f"{report['conversations']} conversation(s) — {verb} "
+        f"{report['imported']} new, {report['updated']} updated, "
+        f"{report['skipped']} skipped"
+    )
+    for row in report["rows"]:
+        if row["action"] == "skipped":
+            continue
+        pid = row.get("proposal_id") or "(dry-run)"
+        _echo(f"  • {pid}  {row['title']}")
+    if not dry_run and (report["imported"] or report["updated"]):
+        _echo("run `vouch review` to decide.")
+
+
 # --- auto-pr: open N mergeable PRs against any github repo -----------------
 
 
@@ -5616,10 +5700,21 @@ def bench() -> None:
 )
 @click.option("--budget-chars", default=None, type=int, help="Context pack budget.")
 @click.option("--limit", default=None, type=int, help="Max context items per query.")
+@click.option(
+    "--strategy", "strategy_path", default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="Score with this ranking strategy file, sandboxed exactly like CI.",
+)
+@click.option(
+    "--against", "against_path", default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="Champion strategy file to pair against; prints the dethrone verdict.",
+)
 @click.option("--json", "as_json", is_flag=True, help="Emit the full report as JSON.")
 def bench_run(
     seed: int, seeds: str | None, budget_chars: int | None,
-    limit: int | None, as_json: bool,
+    limit: int | None, strategy_path: str | None, against_path: str | None,
+    as_json: bool,
 ) -> None:
     """Score retrieval on a generated dataset.
 
@@ -5627,14 +5722,54 @@ def bench_run(
     Examples:
       vouch bench run --seed 7
       vouch bench run --seeds 1,2,3,4,5 --json
+      vouch bench run --seeds 1,2,3 --strategy contrib/strategies/mine.py \\
+          --against contrib/strategies/baseline.py
     """
     from . import bench as bench_mod
 
     budget = budget_chars if budget_chars is not None else bench_mod.DEFAULT_BUDGET_CHARS
     top_k = limit if limit is not None else bench_mod.DEFAULT_LIMIT
+    if against_path and not strategy_path:
+        raise click.UsageError("--against requires --strategy")
+    strategy = None
+    if strategy_path:
+        from .strategy import SandboxProxy
+
+        strategy = SandboxProxy(strategy_path)
+    seed_list = (
+        [int(s) for s in seeds.replace(" ", "").split(",") if s]
+        if seeds else [seed]
+    )
+    if against_path:
+        champion = SandboxProxy(against_path)
+        champion_scores = [
+            bench_mod.run(
+                s, budget_chars=budget, limit=top_k, strategy=champion,
+            )["composite"]
+            for s in seed_list
+        ]
+        challenger_scores = [
+            bench_mod.run(
+                s, budget_chars=budget, limit=top_k, strategy=strategy,
+            )["composite"]
+            for s in seed_list
+        ]
+        verdict = bench_mod.paired_verdict(champion_scores, challenger_scores)
+        verdict["seeds"] = seed_list
+        if as_json:
+            click.echo(json.dumps(verdict, indent=2))
+            return
+        click.echo(
+            f"challenger {verdict['challenger']['mean']:.4f}  "
+            f"champion {verdict['champion']['mean']:.4f}  "
+            f"diff {verdict['mean_diff']:+.4f}  band {verdict['band']:.4f}"
+        )
+        click.echo("DETHRONED" if verdict["dethroned"] else "held")
+        return
     if seeds:
-        seed_list = [int(s) for s in seeds.replace(" ", "").split(",") if s]
-        report = bench_mod.run_seeds(seed_list, budget_chars=budget, limit=top_k)
+        report = bench_mod.run_seeds(
+            seed_list, budget_chars=budget, limit=top_k, strategy=strategy,
+        )
         if as_json:
             click.echo(json.dumps(report, indent=2))
             return
@@ -5645,7 +5780,7 @@ def bench_run(
         for name, mean in report["categories"].items():
             click.echo(f"  {name:<24} {mean:>5.2f}")
         return
-    report = bench_mod.run(seed, budget_chars=budget, limit=top_k)
+    report = bench_mod.run(seed, budget_chars=budget, limit=top_k, strategy=strategy)
     if as_json:
         click.echo(json.dumps(report, indent=2))
         return

@@ -126,6 +126,7 @@ def test_adopt_respects_a_closed_gate(personal: KBStore, tmp_path: Path) -> None
     project = KBStore.init(origin)
     cfg = yaml.safe_load(project.config_path.read_text(encoding="utf-8"))
     cfg["review"]["auto_approve_on_receipt"] = False
+    cfg["review"].pop("approver_role", None)
     project.config_path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
     report = adopt_mod.adopt(project, personal, match_root=origin)
@@ -284,6 +285,7 @@ def test_adopt_does_not_requeue_pending_claims(
     project = KBStore.init(origin)
     cfg = yaml.safe_load(project.config_path.read_text(encoding="utf-8"))
     cfg["review"]["auto_approve_on_receipt"] = False
+    cfg["review"].pop("approver_role", None)
     project.config_path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
     first = adopt_mod.adopt(project, personal, match_root=origin)
@@ -364,6 +366,7 @@ def test_retire_never_archives_a_claim_that_only_landed_pending(
     project = KBStore.init(origin)
     cfg = yaml.safe_load(project.config_path.read_text(encoding="utf-8"))
     cfg["review"]["auto_approve_on_receipt"] = False
+    cfg["review"].pop("approver_role", None)
     project.config_path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
     report = adopt_mod.adopt(project, personal, match_root=origin, retire=True)
@@ -395,6 +398,7 @@ def test_dry_run_honours_a_closed_gate(personal: KBStore, tmp_path: Path) -> Non
     project = KBStore.init(origin)
     cfg = yaml.safe_load(project.config_path.read_text(encoding="utf-8"))
     cfg["review"]["auto_approve_on_receipt"] = False
+    cfg["review"].pop("approver_role", None)
     project.config_path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
     dry = adopt_mod.adopt(project, personal, match_root=origin, dry_run=True)

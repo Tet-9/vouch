@@ -639,6 +639,18 @@ def test_two_phase_config_flag_parsed(store: KBStore) -> None:
     assert cfg.two_phase is True
 
 
+def test_two_phase_quoted_false_string_does_not_enable(store: KBStore) -> None:
+    """Regression: bool("false") is True in plain Python, so a mistakenly
+    quoted `two_phase: "false"` previously silently enabled two-phase mode."""
+    store.config_path.write_text(
+        store.config_path.read_text(encoding="utf-8")
+        + '\ncompile:\n  llm_cmd: "cat /dev/null"\n  two_phase: "false"\n',
+        encoding="utf-8",
+    )
+    cfg = compile_mod.load_config(store)
+    assert cfg.two_phase is False
+
+
 def test_parse_topics_reads_strings_and_objects() -> None:
     assert compile_mod.parse_topics('["Alpha", "Beta"]') == ["Alpha", "Beta"]
     assert compile_mod.parse_topics('[{"title": "Gamma"}]') == ["Gamma"]

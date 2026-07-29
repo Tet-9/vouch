@@ -29,7 +29,7 @@ machine; that reproducibility is the whole trust model.
    around `proposals.approve()`, plaintext storage, no baked model deps).
    Near-identical entries: the earlier-opened PR wins (first-seen).
 6. **Pay and merge.** Every entry that beats `main`'s composite by the
-   margin band — `max(0.007, 1.64 x SE_paired)` over the scored seeds —
+   margin band — `max(0.007, 1.96 x SE_paired)` over the scored seeds —
    earns its rank share of the pool (65 / 14 / 10 / 7 / 4 while the field
    is small). The winner merges and becomes the champion the next season
    must dethrone.

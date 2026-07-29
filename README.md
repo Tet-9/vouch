@@ -47,14 +47,6 @@ The same argument as a picture — at one writer the two are the same thing; the
 
 So the honest pitch: **vouch is not a better place to put memory — it's a review gate in front of one, and a wiki on the other side of it.** If you're solo and happy, one prompt is genuinely fine; vouch's session capture runs passively alongside whatever your host already remembers, rather than replacing it. But once a fleet of agents writes to shared knowledge — or a team does — that pile of notes needs an editor, and an editor is not something you can prompt your way to. The case in full: [docs/review-gate.md](docs/review-gate.md).
 
-## Watch it work (110 seconds)
-
-[![vouch demo — capture, summarize, approve, compile, recall](docs/img/how-it-works-preview.gif)](docs/vouch-how-it-works.mp4)
-
-**capture → summarize → approve → compile → recall.** Captured live from the review console, no mockups — the preview above is muted and 3× speed; the full cut is **[▶ docs/vouch-how-it-works.mp4](docs/vouch-how-it-works.mp4)**. A Claude Code session captures itself, an LLM summarizes what the session *meant*, a human approves it at the gate, **`vouch compile`** distills the approved claims into cited topic pages (every `[claim: …]` citation machine-verified, still gated), and the film closes on real `vouch recall` output — the wiki the video just built, injected into the next session's first turn.
-
-Everything below exists to reproduce that loop on your own project.
-
 ## Install
 
 **For the full UI experience** (recommended first time):
@@ -221,6 +213,7 @@ Pending drafts (`proposed/`) and the derived search index (`state.db`) are gitig
 * `vouch install-mcp <host>` also wires cursor, codex, zed, windsurf, openclaw and friends ([adapters/](adapters/))
 * [vouch webapp](https://github.com/vouchdev/webApp) — the chat-first browser console from the video; [vouch-desktop](https://github.com/vouchdev/vouch-desktop) wraps the same loop as a desktop app
 * [CONTRIBUTING.md](CONTRIBUTING.md) — development setup and the test gate
+* [docs/mining-on-vouch.md](docs/mining-on-vouch.md) — get paid to improve the retrieval engine: submit ranking code, scored by a reproducible benchmark; the best verified strategy ships as the default
 
 ## Incubated by Gittensor
 

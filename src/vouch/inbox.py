@@ -23,6 +23,7 @@ from pathlib import Path
 
 import yaml
 
+from .config_coerce import coerce_bool
 from .proposals import propose_page
 from .storage import KBStore
 
@@ -62,7 +63,7 @@ def load_config(store: KBStore) -> InboxConfig:
         return InboxConfig()
     extensions = raw.get("extensions")
     return InboxConfig(
-        enabled=bool(raw.get("enabled", True)),
+        enabled=coerce_bool(raw.get("enabled", True), True),
         min_chars=int(raw.get("min_chars", DEFAULT_MIN_CHARS)),
         extensions=(
             tuple(str(e) for e in extensions)

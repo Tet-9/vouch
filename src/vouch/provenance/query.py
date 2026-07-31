@@ -7,6 +7,7 @@ here too (bare prose + indentation, no colour) so output diffs cleanly into a
 
 from __future__ import annotations
 
+import json
 from enum import StrEnum
 
 from ..models import PageStatus
@@ -267,10 +268,13 @@ def graph_export(
     fmt: str = "dot",
     use_cache: bool = True,
 ) -> str:
-    """Render the DAG (or one session's subgraph) as Graphviz ``dot`` or
-    ``mermaid`` flowchart text."""
-    if fmt not in ("dot", "mermaid"):
-        raise ValueError(f"unknown graph format: {fmt!r} (use 'dot' or 'mermaid')")
+    """Render the DAG (or one session's subgraph) as Graphviz ``dot``,
+    ``mermaid`` flowchart text, or ``json`` (issue #604: nodes/edges for a
+    webapp graph view -- see _to_json for the exact shape and its scope)."""
+    if fmt not in ("dot", "mermaid", "json"):
+        raise ValueError(
+            f"unknown graph format: {fmt!r} (use 'dot', 'mermaid', or 'json')"
+        )
     graph = load_graph(store, use_cache=use_cache)
     edges = (
         _session_subgraph_edges(graph, session) if session is not None else graph.edges
@@ -285,6 +289,8 @@ def graph_export(
     nodes.sort()
     if fmt == "dot":
         return _to_dot(graph, nodes, edges)
+    if fmt == "json":
+        return _to_json(store, graph, nodes, edges)
     return _to_mermaid(graph, nodes, edges)
 
 
@@ -317,6 +323,48 @@ def _to_mermaid(graph: ProvGraph, nodes: list[str], edges: list) -> str:  # type
             f"  {alias[e.src_id]} -->|{e.kind.value}| {alias[e.dst_id]}"
         )
     return "\n".join(lines) + "\n"
+
+
+def _to_json(
+    store: KBStore, graph: ProvGraph, nodes: list[str], edges: list  # type: ignore[type-arg]
+) -> str:
+    """JSON graph export (issue #604): {nodes: [{id, kind, label, status}],
+    edges: [{src, dst, kind}]}.
+
+    status is the artifact's own durable ClaimStatus/PageStatus where the
+    node kind carries one (working/actionable/stable/contested/superseded/
+    archived/redacted for claims; draft/active/archived for pages); null for
+    evidence/source/session/event nodes, which have no status concept, and
+    for a claim/page id whose file no longer resolves.
+
+    Scope note: pending proposals are not graph nodes here -- build_graph
+    (graph.py) reads only durable artifacts (store.list_claims/list_pages),
+    never proposed/. Rendering the "pending frontier" the way issue #604
+    describes would mean teaching build_graph to also walk pending
+    proposals, a materially bigger change than this serializer addition;
+    left as a follow-up rather than silently narrowing what "status" means.
+    """
+    node_objs: list[dict[str, str | None]] = []
+    for n in nodes:
+        kind = graph.kind_of(n)
+        status: str | None = None
+        if kind is NodeKind.CLAIM:
+            try:
+                status = store.get_claim(n).status.value
+            except ArtifactNotFoundError:
+                status = None
+        elif kind is NodeKind.PAGE:
+            try:
+                status = store.get_page(n).status.value
+            except ArtifactNotFoundError:
+                status = None
+        node_objs.append(
+            {"id": n, "kind": kind.value, "label": n, "status": status}
+        )
+    edge_objs = [
+        {"src": e.src_id, "dst": e.dst_id, "kind": e.kind.value} for e in edges
+    ]
+    return json.dumps({"nodes": node_objs, "edges": edge_objs}, indent=2) + "\n"
 
 
 # --- human rendering ------------------------------------------------------

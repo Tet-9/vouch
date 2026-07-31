@@ -3751,11 +3751,11 @@ def impact(claim_id: str, depth: int, if_op: str | None, as_json: bool) -> None:
     "fmt",
     default="dot",
     show_default=True,
-    type=click.Choice(["dot", "mermaid"]),
+    type=click.Choice(["dot", "mermaid", "json"]),
     help="Output format for the DAG.",
 )
 def graph(session: str | None, fmt: str) -> None:
-    """Render the provenance DAG as Graphviz dot or a mermaid flowchart."""
+    """Render the provenance DAG as Graphviz dot, a mermaid flowchart, or json."""
     store = _load_store()
     with _cli_errors():
         text = prov_mod.graph_export(store, session=session, fmt=fmt)

@@ -218,6 +218,41 @@ def test_graph_export_session_subgraph(store: KBStore) -> None:
     assert "c-new" in dot and "c-old" in dot
 
 
+def test_graph_export_json(store: KBStore) -> None:
+    """Regression for issue #604: format='json' returns {nodes, edges} with
+    a real status for claim/page nodes and null for kinds with no status
+    concept, and must never break the byte-identical dot/mermaid paths."""
+    _seed(store)
+    out = prov.graph_export(store, fmt="json")
+    data = json.loads(out)
+    assert set(data.keys()) == {"nodes", "edges"}
+
+    node_by_id = {n["id"]: n for n in data["nodes"]}
+    assert "c-new" in node_by_id
+    claim_node = node_by_id["c-new"]
+    assert claim_node["kind"] == "claim"
+    assert claim_node["status"] is not None  # a real ClaimStatus value
+
+    for n in data["nodes"]:
+        assert set(n.keys()) == {"id", "kind", "label", "status"}
+        if n["kind"] not in ("claim", "page"):
+            assert n["status"] is None
+
+    for e in data["edges"]:
+        assert set(e.keys()) == {"src", "dst", "kind"}
+    assert any(e["kind"] == "supersedes" for e in data["edges"])
+
+
+def test_graph_export_json_does_not_affect_dot_or_mermaid(store: KBStore) -> None:
+    """The json format is additive -- dot/mermaid output must be unchanged
+    whether or not json is ever requested first."""
+    _seed(store)
+    dot_before = prov.graph_export(store, fmt="dot")
+    prov.graph_export(store, fmt="json")
+    dot_after = prov.graph_export(store, fmt="dot")
+    assert dot_before == dot_after
+
+
 # --- CLI ------------------------------------------------------------------
 
 

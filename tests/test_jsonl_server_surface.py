@@ -12,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pytest
 
 from vouch import bundle
@@ -21,6 +20,8 @@ from vouch.embeddings.base import DEFAULT_MODEL_NAME, Embedder
 from vouch.jsonl_server import HANDLERS, handle_request
 from vouch.models import Claim, Entity, Page
 from vouch.storage import KBStore
+
+np = pytest.importorskip("numpy")
 
 
 class _HashEmbedder(Embedder):

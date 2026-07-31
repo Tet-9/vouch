@@ -13,7 +13,6 @@ import sqlite3
 import sys
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from vouch import index_db
@@ -21,6 +20,8 @@ from vouch.embeddings import register
 from vouch.embeddings.base import DEFAULT_MODEL_NAME, Embedder
 from vouch.models import Claim, Entity, Page
 from vouch.storage import KBStore
+
+np = pytest.importorskip("numpy")
 
 
 class _HashEmbedder(Embedder):

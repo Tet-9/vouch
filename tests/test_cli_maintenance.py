@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import numpy as np
 import pytest
 from click.testing import CliRunner, Result
 
@@ -21,6 +20,8 @@ from vouch.embeddings.base import DEFAULT_MODEL_NAME, Embedder
 from vouch.models import Claim
 from vouch.proposals import propose_claim
 from vouch.storage import KBStore
+
+np = pytest.importorskip("numpy")
 
 
 class _HashEmbedder(Embedder):

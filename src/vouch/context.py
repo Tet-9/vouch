@@ -19,7 +19,7 @@ from typing import Any, Literal, cast
 
 import yaml
 
-from . import graph, hot_memory, index_db, retrieval_events
+from . import graph, hot_memory, index_db, pins as pins_mod, retrieval_events
 from . import strategy as strategy_mod
 from .embeddings.fusion import rrf_fuse
 from .models import (
@@ -752,6 +752,49 @@ def _origin_from_tags(tags: list[str]) -> str | None:
     return None
 
 
+def _resolve_pinned_hits(
+    store: KBStore,
+    viewer: ViewerContext,
+    *,
+    max_chars: int | None,
+) -> list[tuple[str, str, str, float, str]]:
+    """Pinned artifacts as hit-tuples (issue #615): viewer-filtered, and
+    capped to `retrieval.pins.budget_share` of max_chars so pins can never
+    starve salience-ranked retrieval entirely.
+
+    Same 5-tuple shape (kind, id, summary, score, backend) build_context_pack
+    already expects from _retrieve -- prepending these to `hits` lets the
+    existing item-construction loop (retracted-claim skip, archived-page
+    skip, citation resolution, _enrich_summary) run unchanged for pins too,
+    with no separate code path to keep in sync.
+    """
+    active = pins_mod.list_pins(store)
+    if not active:
+        return []
+    # 4-tuple shape filter_hits expects (no backend yet).
+    tuples = [(p.kind, p.id, "", 1.0) for p in active]
+    visible = filter_hits(store, tuples, viewer)
+    resolved = [
+        (kind, aid, _enrich_summary(store, kind, aid, ""), score)
+        for kind, aid, _summary, score in visible
+    ]
+    if max_chars is None:
+        return [(k, i, s, sc, "pinned") for k, i, s, sc in resolved]
+    pin_budget = max_chars * pins_mod.load_pins_config(store).budget_share
+    capped: list[tuple[str, str, str, float]] = []
+    running = 0
+    for kind, aid, summary, score in resolved:
+        cost = len(summary)
+        # Always admit the first pin even if it alone exceeds the share --
+        # a single oversized pin shouldn't silently vanish; the existing
+        # max_chars clip/omit pass downstream still bounds the total pack.
+        if capped and running + cost > pin_budget:
+            break
+        capped.append((kind, aid, summary, score))
+        running += cost
+    return [(k, i, s, sc, "pinned") for k, i, s, sc in capped]
+
+
 def build_context_pack(
     store: KBStore,
     *,
@@ -787,6 +830,15 @@ def build_context_pack(
     hits = _maybe_strategy(
         store, query=query, hits=hits, limit=limit, strategy=strategy
     )[:limit]
+
+    # Pinned artifacts always enter the pack, ahead of salience-ranked hits
+    # (issue #615) -- prepended so the budget-truncation pass below (which
+    # evicts from the tail) drops them last, not first.
+    pinned_hits = _resolve_pinned_hits(store, viewer, max_chars=max_chars)
+    if pinned_hits:
+        pinned_ids = {(k, i) for k, i, *_rest in pinned_hits}
+        hits = pinned_hits + [h for h in hits if (h[0], h[1]) not in pinned_ids]
+
     items: list[ContextItem] = []
     for kind, hid, summary, score, backend in hits:
         cites: list[str] = []

@@ -42,6 +42,7 @@ from . import lifecycle as life
 from . import metrics as metrics_mod
 from . import migrations as migrations_mod
 from . import notify as notify_mod
+from . import pins as pins_mod
 from . import pr_cache as prc_mod
 from . import provenance as prov_mod
 from . import recall as recall_mod
@@ -1348,6 +1349,71 @@ def rejected(as_json: bool, limit: int | None, admission_only: bool) -> None:
         click.echo(f"    {str(preview).strip()[:100]}")
         if pr.decision_reason:
             click.echo(f"    reason: {pr.decision_reason}")
+
+
+@cli.command()
+@click.argument("artifact_id")
+@click.option(
+    "--local", is_flag=True,
+    help="Personal pin (pins.local.json, gitignored) instead of committed/team-shared.",
+)
+@click.option(
+    "--expires-in-days", type=float, default=None,
+    help="Auto-expire after N days (default: never).",
+)
+def pin(artifact_id: str, local: bool, expires_in_days: float | None) -> None:
+    """Pin a claim or page so it always enters the context pack.
+
+    A pin is a pointer to an already-approved artifact, not a new claim --
+    nothing durable is asserted, so there is no review gate on pinning.
+    """
+    store = _load_store()
+    with _cli_errors():
+        try:
+            result = pins_mod.pin(
+                store, artifact_id, pinned_by=_whoami(),
+                local=local, expires_in_days=expires_in_days,
+            )
+        except pins_mod.PinError as e:
+            raise click.ClickException(str(e)) from e
+    scope = "local" if local else "committed"
+    click.echo(f"Pinned {result.kind} {result.id!r} ({scope})")
+
+
+@cli.command()
+@click.argument("artifact_id")
+def unpin(artifact_id: str) -> None:
+    """Remove a pin (checks both committed and local pins)."""
+    store = _load_store()
+    if pins_mod.unpin(store, artifact_id):
+        click.echo(f"Unpinned {artifact_id!r}")
+    else:
+        raise click.ClickException(f"{artifact_id!r} is not pinned")
+
+
+@cli.group()
+def pins() -> None:
+    """Manage the working set of pinned artifacts (issue #615)."""
+
+
+@pins.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of text.")
+@click.option(
+    "--include-expired", is_flag=True, help="Also show pins past their expiry."
+)
+def pins_list(as_json: bool, include_expired: bool) -> None:
+    """List active pins."""
+    store = _load_store()
+    items = pins_mod.list_pins(store, include_expired=include_expired)
+    if as_json:
+        _emit_json([p.to_dict() for p in items])
+        return
+    if not items:
+        click.echo("no pins")
+        return
+    for p in items:
+        expiry = f"  (expires {p.expires_at})" if p.expires_at else ""
+        click.echo(f"• {p.id}  [{p.kind}]  pinned by {p.pinned_by} at {p.pinned_at}{expiry}")
 
 
 def _proposal_preview(pr: Proposal) -> str:
@@ -3678,11 +3744,11 @@ def impact(claim_id: str, depth: int, if_op: str | None, as_json: bool) -> None:
     "fmt",
     default="dot",
     show_default=True,
-    type=click.Choice(["dot", "mermaid"]),
+    type=click.Choice(["dot", "mermaid", "json"]),
     help="Output format for the DAG.",
 )
 def graph(session: str | None, fmt: str) -> None:
-    """Render the provenance DAG as Graphviz dot or a mermaid flowchart."""
+    """Render the provenance DAG as Graphviz dot, a mermaid flowchart, or json."""
     store = _load_store()
     with _cli_errors():
         text = prov_mod.graph_export(store, session=session, fmt=fmt)

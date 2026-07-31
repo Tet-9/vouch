@@ -7,6 +7,20 @@ All notable changes to vouch are documented here. Format follows
 ## [Unreleased]
 
 ### Added
+- **read-only kb subscriptions — federate search without copying** (#610):
+  sharing knowledge between KBs meant copying it — `vouch hub` export/import
+  moves artifacts through the receiving gate and they become local,
+  duplicated, and drift independently, re-review needed on every upstream
+  edit. `vouch subscribe <kb>` / `unsubscribe` / `subscriptions list` add
+  ditto-style subscription instead: a subscribed KB's approved knowledge
+  joins local `kb.search` / `kb.context` results, live, read-only, never
+  copied. Federated hits are namespaced (`<kb_id>:<artifact_id>`) so they
+  never resolve locally, tagged with `origin_kb_id`/`origin_kb_name`/
+  `trust_level` so a reader can't mistake them for locally-reviewed
+  knowledge, and capped by a `budget_share` knob that only fills leftover
+  result slots — a subscription can never crowd out local knowledge. One
+  hop only: a federated call never itself federates.
+
 - **correction capture — the pushback becomes a proposal** (#430): the adapter
   captured tool *outcomes* passively but never the single highest-signal event
   in a session, the user correcting the agent ("no, we deploy from `main` not

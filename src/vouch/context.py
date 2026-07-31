@@ -22,6 +22,7 @@ import yaml
 from . import graph, hot_memory, index_db, retrieval_events
 from . import pins as pins_mod
 from . import strategy as strategy_mod
+from . import subscriptions as subscriptions_mod
 from .config_coerce import coerce_bool
 from .embeddings.fusion import rrf_fuse
 from .models import (
@@ -481,6 +482,58 @@ def _retrieve(
     return [(k, i, s, sc, "substring") for k, i, s, sc in filtered]
 
 
+def _add_federated_hits(
+    store: KBStore,
+    local_hits: list[dict[str, Any]],
+    *,
+    query: str,
+    limit: int,
+    backend: str | None,
+    min_score: float,
+) -> list[dict[str, Any]]:
+    """Merge in read-only hits from subscribed KBs, budget-capped.
+
+    Federated hits only ever fill leftover slots after local hits -- the
+    budget knob caps how many slots subscriptions may use, it never lets a
+    subscription displace an already-ranked local hit. A large or noisy
+    subscribed KB therefore cannot crowd out local knowledge; at worst it
+    fills the remainder of the pack.
+    """
+    subs = subscriptions_mod.list_subscriptions(store)
+    if not subs:
+        return local_hits
+    slack = limit - len(local_hits)
+    if slack <= 0:
+        return local_hits
+    cfg = subscriptions_mod.load_subscriptions_config(store)
+    budget = max(0, min(slack, round(limit * cfg.budget_share)))
+    if budget <= 0:
+        return local_hits
+
+    federated: list[dict[str, Any]] = []
+    for sub in subs:
+        sub_store = subscriptions_mod.open_subscribed_store(sub)
+        if sub_store is None:
+            continue  # moved/deleted since subscribing -- contribute nothing
+        sub_result = search_kb(
+            sub_store, query=query, limit=budget, backend=backend,
+            min_score=min_score, _federate=False,
+        )
+        for hit in sub_result.get("hits", []):
+            federated.append(
+                {
+                    **hit,
+                    "id": f"{sub.kb_id}:{hit['id']}",
+                    "origin_kb_id": sub.kb_id,
+                    "origin_kb_name": sub.name,
+                    "trust_level": sub.trust_level,
+                    "federated": True,
+                }
+            )
+    federated.sort(key=lambda h: h["score"], reverse=True)
+    return local_hits + federated[:budget]
+
+
 def search_kb(
     store: KBStore,
     *,
@@ -490,6 +543,7 @@ def search_kb(
     min_score: float = 0.0,
     project: str | None = None,
     agent: str | None = None,
+    _federate: bool = True,
 ) -> dict[str, Any]:
     """The one `kb.search` implementation every surface delegates to.
 
@@ -580,6 +634,17 @@ def search_kb(
         "viewer": {"project": viewer.project, "agent": viewer.agent},
         "hits": hits_list,
     }
+    # Federate: subscribed KBs are queried alongside the local one and
+    # merged in, read-only. One hop only -- a federated call never itself
+    # federates (subscriptions_mod never reads a foreign KB's own
+    # subscriptions.json either, so this flag is belt-and-suspenders).
+    if _federate:
+        hits_list = _add_federated_hits(
+            store, hits_list, query=query, limit=limit, backend=backend,
+            min_score=min_score,
+        )
+        result["hits"] = hits_list
+
     # The single search path serves both agent-facing surfaces (MCP + JSONL),
     # so the hot-memory sidebar (#261) is attached here rather than duplicated
     # at each call site.
@@ -762,6 +827,58 @@ def _origin_from_tags(tags: list[str]) -> str | None:
     return None
 
 
+def _federated_context_items(
+    store: KBStore, query: str, viewer: ViewerContext, budget: int,
+) -> list[ContextItem]:
+    """Read-only ContextItems from every subscribed KB, budget-capped.
+
+    Mirrors the per-hit processing in build_context_pack (retracted-claim
+    and dead-page filtering) but against each subscription's own store, and
+    scoped by that store's own viewer/config -- a subscription is queried on
+    its own terms, same as the local KB is. Always tagged with the
+    subscribing KB's kb_id and trust_level; a federated hit's own origin tag
+    (if any) is ignored, since subscriptions are one hop only.
+    """
+    subs = subscriptions_mod.list_subscriptions(store)
+    if not subs:
+        return []
+    federated: list[ContextItem] = []
+    for sub in subs:
+        sub_store = subscriptions_mod.open_subscribed_store(sub)
+        if sub_store is None:
+            continue  # moved/deleted since subscribing -- contributes nothing
+        sub_viewer = viewer_from(config_path=sub_store.config_path)
+        hits = _retrieve(sub_store, query, budget, sub_viewer)
+        for kind, hid, summary, score, backend in hits:
+            cites: list[str] = []
+            if kind == "claim":
+                try:
+                    claim = sub_store.get_claim(hid)
+                except ArtifactNotFoundError:
+                    continue
+                if claim.status in _RETRACTED_CLAIM_STATUSES:
+                    continue
+                cites = list(claim.evidence)
+            elif kind == "page" and not _page_is_live(sub_store, hid):
+                continue
+            summary = _enrich_summary(sub_store, kind, hid, summary)
+            federated.append(
+                ContextItem(
+                    id=f"{sub.kb_id}:{hid}",
+                    type=cast(ContextItemKind, kind),
+                    summary=summary,
+                    score=score,
+                    backend=backend,
+                    citations=cites,
+                    freshness="unknown",
+                    origin=sub.kb_id,
+                    trust_level=sub.trust_level,
+                )
+            )
+    federated.sort(key=lambda i: i.score, reverse=True)
+    return federated[:budget]
+
+
 def build_context_pack(
     store: KBStore,
     *,
@@ -836,6 +953,16 @@ def build_context_pack(
                 rel_types=graph_rel_types,
             )
         )
+
+    # Federate: subscribed KBs fill only the leftover slots after local
+    # hits, capped by the budget knob -- they never displace a ranked local
+    # item, only occupy what's unused.
+    slack = limit - len(items)
+    if slack > 0:
+        cfg = subscriptions_mod.load_subscriptions_config(store)
+        fed_budget = max(0, min(slack, round(limit * cfg.budget_share)))
+        if fed_budget > 0:
+            items.extend(_federated_context_items(store, query, viewer, fed_budget))
 
     items = _dedupe_near_duplicates(items)
 

@@ -52,6 +52,7 @@ from . import recall as recall_mod
 from . import sessions as sess_mod
 from . import skills as skills_mod
 from . import stats as stats_mod
+from . import subscriptions as subscriptions_mod
 from . import sync as sync_mod
 from . import synthesize as synth
 from . import trust as trust_mod
@@ -391,6 +392,60 @@ def hub_unregister(token: str) -> None:
     if removed is None:
         raise click.ClickException(f"no registered KB matches {token!r}")
     click.echo(f"unregistered {removed.name} ({removed.kb_id})")
+
+
+@cli.command("subscribe")
+@click.argument("kb_ref")
+@click.option(
+    "--trust-level",
+    default=subscriptions_mod.DEFAULT_TRUST_LEVEL,
+    show_default=True,
+    type=click.Choice(subscriptions_mod.TRUST_LEVELS),
+    help="How federated hits from this KB are labeled downstream.",
+)
+def subscribe_cmd(kb_ref: str, trust_level: str) -> None:
+    """Subscribe to another KB's approved knowledge, read-only."""
+    store = _load_store()
+    with _cli_errors():
+        try:
+            sub = subscriptions_mod.subscribe(store, kb_ref, trust_level=trust_level)
+        except subscriptions_mod.SubscriptionError as e:
+            raise click.ClickException(str(e)) from e
+    click.echo(f"subscribed to {sub.name} ({sub.kb_id}) trust={sub.trust_level}")
+
+
+@cli.command("unsubscribe")
+@click.argument("kb_ref")
+def unsubscribe_cmd(kb_ref: str) -> None:
+    """Stop federating search/context with a subscribed KB."""
+    store = _load_store()
+    with _cli_errors():
+        removed = subscriptions_mod.unsubscribe(store, kb_ref)
+    if not removed:
+        raise click.ClickException(f"no subscription matches {kb_ref!r}")
+    click.echo(f"unsubscribed from {kb_ref}")
+
+
+@cli.group(name="subscriptions")
+def subscriptions_group() -> None:
+    """Read-only KBs federated into this KB's search and context."""
+
+
+@subscriptions_group.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Emit subscriptions as JSON.")
+def subscriptions_list(as_json: bool) -> None:
+    """List this KB's subscriptions."""
+    store = _load_store()
+    with _cli_errors():
+        subs = subscriptions_mod.list_subscriptions(store)
+    if as_json:
+        _emit_json({"subscriptions": [s.to_dict() for s in subs]})
+        return
+    if not subs:
+        click.echo("no subscriptions")
+        return
+    for s in subs:
+        click.echo(f"{s.name}  [{s.trust_level}]  {s.path}  ({s.kb_id})")
 
 
 def _init_personal_kb(fallback: bool | None) -> Path:

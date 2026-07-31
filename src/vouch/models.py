@@ -532,6 +532,13 @@ class ContextItem(BaseModel):
         "gated federation import (from the claim's origin:<kb> tag). None for "
         "locally-authored knowledge.",
     )
+    trust_level: str | None = Field(
+        default=None,
+        description="vouch: the subscribed KB's trust level ('unverified' or "
+        "'trusted'), set only for hits federated in via a read-only "
+        "subscription. None for local knowledge and for gated-import origin "
+        "hits (those aren't federated, they're locally-owned copies).",
+    )
 
 
 class ContextQuality(BaseModel):
